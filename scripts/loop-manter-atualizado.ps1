@@ -74,10 +74,15 @@ try {
         if ($InstalarApp) { $argumentos += '-InstalarApp' }
         $p = Start-Process -FilePath 'powershell.exe' -ArgumentList $argumentos -PassThru -Wait -WindowStyle Hidden
         Note "ciclo de sync+build executado (codigo $($p.ExitCode))"
+        # Codigo 20 = instalacao adiada pelo guard (app ocupado/estado
+        # desconhecido), nao falha real. NAO avanca $ultimoSync, para o
+        # proximo watchdog (5min) tentar de novo -- senao a instalacao
+        # pendente ficaria presa ate o proximo ciclo de 3h.
+        if ($p.ExitCode -ne 20) { $ultimoSync = $agora }
       } catch {
         Note "AVISO: sincronizar-e-instalar-agent-code.ps1 falhou: $($_.Exception.Message)"
+        $ultimoSync = $agora
       }
-      $ultimoSync = $agora
     }
 
     Start-Sleep -Seconds $WatchdogIntervalSeconds
