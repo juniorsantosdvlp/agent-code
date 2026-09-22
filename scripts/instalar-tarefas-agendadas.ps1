@@ -57,7 +57,10 @@ $syncLogon.Delay = 'PT2M'
 $syncDaily = New-ScheduledTaskTrigger -Daily -At '07:00'
 $syncDaily.Repetition = (New-ScheduledTaskTrigger -Once -At '07:00' -RepetitionInterval (New-TimeSpan -Hours 3) -RepetitionDuration (New-TimeSpan -Days 1)).Repetition
 
-$installArg = if ($InstalarApp) { '-InstalarApp:$true' } else { '-InstalarApp:$false' }
+# [switch] no script alvo: presenca/ausencia da flag, nunca ":$true"/":$false"
+# (esse token nao sobrevive atravessando o Agendador de Tarefas ate o
+# processo filho -- chega como a STRING "$false", que o parametro rejeita).
+$installArg = if ($InstalarApp) { '-InstalarApp' } else { '' }
 Register-Idempotent -Name 'AgentCode-SincronizarEInstalar' -ScriptPath $syncScript -Arguments $installArg `
   -Triggers @($syncLogon, $syncDaily) -ExecutionTimeLimitMinutes 60
 
