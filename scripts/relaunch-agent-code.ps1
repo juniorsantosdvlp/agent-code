@@ -8,7 +8,7 @@
 #   Start-Process powershell -WindowStyle Hidden -ArgumentList `
 #     '-NoProfile','-ExecutionPolicy','Bypass','-File','scripts\relaunch-agent-code.ps1'
 #
-# Sequência: confere o guarda -> espera 5 s -> fecha -> espera 5 s -> reabre.
+# Sequência: confere o guarda -> espera 5 s -> fecha -> [instala, se -InstallerPath] -> espera 5 s -> reabre.
 #
 # REGRA CENTRAL: só reinicia se NENHUM agente estiver ocupado. Quem responde
 # isso é o app, não este script — um script vê processos, nunca conversas. O
@@ -26,7 +26,11 @@ param(
   # Idade máxima aceita do arquivo de estado, em segundos.
   [int]$MaxGuardAge = 15,
   # Reinicia mesmo com agente ocupado. Só para uso manual do usuário.
-  [switch]$Force
+  [switch]$Force,
+  # Instalador a rodar depois de fechar e antes de reabrir (ex.: AgentCode-setup.exe).
+  # Opcional: sem isso, o script só fecha e reabre o mesmo exe, como sempre fez.
+  [string]$InstallerPath = '',
+  [string]$InstallerArgs = '/S'
 )
 $ErrorActionPreference = 'Stop'
 
@@ -92,6 +96,29 @@ if ($running.Count) {
   Note "app encerrado"
 } else {
   Note "nenhum processo 'Agent Code' rodando"
+}
+
+# ---- 2b) Instalar, se pedido ---------------------------------------------
+# Só roda depois que o app está fechado (senão o instalador ou trava no
+# arquivo em uso, ou o assistente NSIS aparece pedindo para fechar). Mesmo se
+# o instalador falhar, o script sempre segue para reabrir o que já está em
+# disco — nunca deixa o usuario sem nenhum app aberto.
+if ($InstallerPath) {
+  if (-not (Test-Path -LiteralPath $InstallerPath -PathType Leaf)) {
+    Note "AVISO: instalador nao encontrado ($InstallerPath) -- reabrindo o que ja esta instalado"
+  } else {
+    Note "instalando silenciosamente: $InstallerPath $InstallerArgs"
+    try {
+      $installProc = Start-Process -FilePath $InstallerPath -ArgumentList $InstallerArgs -PassThru -Wait
+      if ($installProc.ExitCode -eq 0) {
+        Note "instalacao concluida"
+      } else {
+        Note ("AVISO: instalador saiu com codigo " + $installProc.ExitCode + " -- reabrindo mesmo assim")
+      }
+    } catch {
+      Note ("AVISO: falha ao rodar o instalador -- " + $_.Exception.Message + " -- reabrindo mesmo assim")
+    }
+  }
 }
 
 # ---- 3) Reabrir depois de 5 s -------------------------------------------
