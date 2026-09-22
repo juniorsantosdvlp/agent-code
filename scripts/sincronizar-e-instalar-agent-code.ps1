@@ -15,11 +15,16 @@
 # marcar uma versão de verdade.
 #
 # Uso manual (o mesmo que a tarefa agendada chama):
-#   pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\sincronizar-e-instalar-agent-code.ps1 -InstalarApp:$false
+#   pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\sincronizar-e-instalar-agent-code.ps1
+#   pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\sincronizar-e-instalar-agent-code.ps1 -InstalarApp
+#
+# [switch], não [bool]: presença/ausência da flag, nunca ":$true"/":$false"
+# atravessando fronteira de processo (Start-Process -ArgumentList entrega o
+# token cru "$false" como STRING pro parâmetro [bool], que rejeita).
 param(
-  # Fase 2 do rollout: enquanto $false (padrão), sincroniza e builda mas
-  # NUNCA fecha/instala/reabre o app — só deixa o instalador pronto em dist\.
-  [bool]$InstalarApp = $false,
+  # Fase 2 do rollout: ausente (padrão), sincroniza e builda mas NUNCA
+  # fecha/instala/reabre o app — só deixa o instalador pronto em dist\.
+  [switch]$InstalarApp,
   # Onde o app instalado vive hoje (atalho do Menu Iniciar aponta pra cá).
   [string]$Exe = "$env:LOCALAPPDATA\Programs\Agent Code\Agent Code.exe",
   [int]$MaxGuardAge = 15

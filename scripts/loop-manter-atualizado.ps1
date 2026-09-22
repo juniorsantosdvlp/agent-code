@@ -12,7 +12,10 @@
 # Uso manual (o mesmo que o atalho da pasta Inicializar chama):
 #   powershell -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File scripts\loop-manter-atualizado.ps1
 param(
-  [bool]$InstalarApp = $false,
+  # [switch], não [bool]: ver o comentário equivalente em
+  # sincronizar-e-instalar-agent-code.ps1 -- token booleano não sobrevive
+  # atravessando Start-Process -ArgumentList.
+  [switch]$InstalarApp,
   [int]$WatchdogIntervalSeconds = 300,   # 5 min
   [int]$SyncIntervalSeconds = 10800      # 3 h
 )
@@ -67,10 +70,9 @@ try {
     $agora = Get-Date
     if (($agora - $ultimoSync).TotalSeconds -ge $SyncIntervalSeconds) {
       try {
-        $instalarArg = if ($InstalarApp) { '$true' } else { '$false' }
-        $p = Start-Process -FilePath 'powershell.exe' `
-          -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $sync, '-InstalarApp:' + $instalarArg) `
-          -PassThru -Wait -WindowStyle Hidden
+        $argumentos = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $sync)
+        if ($InstalarApp) { $argumentos += '-InstalarApp' }
+        $p = Start-Process -FilePath 'powershell.exe' -ArgumentList $argumentos -PassThru -Wait -WindowStyle Hidden
         Note "ciclo de sync+build executado (codigo $($p.ExitCode))"
       } catch {
         Note "AVISO: sincronizar-e-instalar-agent-code.ps1 falhou: $($_.Exception.Message)"
