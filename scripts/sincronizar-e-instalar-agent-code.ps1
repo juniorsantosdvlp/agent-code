@@ -235,6 +235,10 @@ try {
     $codigoRelaunch = $LASTEXITCODE
     Note "relaunch-agent-code.ps1 saiu com codigo $codigoRelaunch"
 
+    # Codigo 20 e um sinal pro loop chamador: "adiado, nao e falha real, tenta
+    # de novo no proximo watchdog (5min) em vez de esperar o ciclo cheio
+    # (3h)". Sem isso o guard ocupado bloquearia a instalacao pendente por
+    # ate 3h, mesmo com o instalador ja pronto e o usuario esperando.
     switch ($codigoRelaunch) {
       0 {
         $estado.shaInstalado = $shaAtual
@@ -243,8 +247,8 @@ try {
         Write-Json $statePath $estado
         Note "instalacao e reabertura concluidas. shaInstalado=$shaAtual"
       }
-      2 { Note "guard ausente/velho -- nao instalei agora. Instalador fica pronto para a proxima execucao." }
-      3 { Note "guard indica agente ocupado -- nao instalei agora. Instalador fica pronto para a proxima execucao." }
+      2 { Note "guard ausente/velho -- nao instalei agora. Tentando de novo em breve."; exit 20 }
+      3 { Note "guard indica agente ocupado -- nao instalei agora. Tentando de novo em breve."; exit 20 }
       default { Note "AVISO: relaunch-agent-code.ps1 falhou (codigo $codigoRelaunch). estado nao atualizado; proxima execucao tenta de novo." }
     }
   } finally {
