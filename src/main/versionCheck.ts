@@ -73,7 +73,8 @@ async function lerEstadoInstalado(): Promise<UpdateStatus['instalado']> {
   )
   try {
     const bruto = await readFile(caminho, 'utf8')
-    const estado = JSON.parse(bruto) as EstadoAutoUpdate
+    // PowerShell grava o estado com BOM; JSON.parse rejeita.
+    const estado = JSON.parse(bruto.replace(/^﻿/, '')) as EstadoAutoUpdate
     if (!estado.shaInstalado) return null
     return {
       sha: estado.shaInstalado,
