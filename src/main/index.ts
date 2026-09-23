@@ -66,6 +66,7 @@ import { registerVoiceComponentIpc } from './voiceComponents'
 import { registerAndroidToolchainIpc } from './android/androidToolchainIpc'
 import { claudeAuthProbe, isAuthenticated, logoutClaude } from './auth'
 import { claudeAuthExpiry, claudeConnectedForCard } from './authExpiry'
+import { checkUpdateStatus, triggerForceUpdate } from './versionCheck'
 import { runClaudeLogin } from './login'
 import {
   claudeAccounts,
@@ -1462,6 +1463,19 @@ export function registerIpc(): void {
   ipcMain.handle(Channels.officeAgentFile, (_e, name: unknown) =>
     readOfficeAgentFile(name,{ packaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() })
   )
+  // "Atualização" section of the Settings screen — src/main/versionCheck.ts.
+  // Windows-only (that's where the whole auto-update apparatus lives).
+  ipcMain.handle(Channels.updateCheck, async () => {
+    if (process.platform !== 'win32') {
+      const off = { atualizado: false, commitsAtras: null, sha: null, erro: 'Disponível só no Windows.' }
+      return { appVersion: app.getVersion(), instalado: null, fork: off, original: off, verificadoEm: new Date().toISOString() }
+    }
+    return checkUpdateStatus(app.getVersion())
+  })
+  ipcMain.handle(Channels.updateForce, async () => {
+    if (process.platform !== 'win32') return { disparado: false, erro: 'Disponível só no Windows.' }
+    return triggerForceUpdate()
+  })
   // App configuration (Settings screen).
   ipcMain.handle(Channels.configGet, async () => {
     // Sem isto, uma chamada logo após o boot (a UI monta assim que o storage
