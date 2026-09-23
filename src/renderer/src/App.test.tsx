@@ -3555,3 +3555,45 @@ describe('App — autosave só das conversas alteradas', () => {
     expect((close[0] as Array<{ id: string }>).map((c) => c.id)).toEqual(expect.arrayContaining(['c1', 'c2']))
   })
 })
+
+describe('App — /clear', () => {
+  it('encerra a sessão, esquece o contexto e esvazia a conversa', async () => {
+    render(
+      <UiProvider>
+        <App />
+      </UiProvider>
+    )
+    await send('lembra disso')
+    await waitFor(() => expect(api.startAgent).toHaveBeenCalledTimes(1))
+    await flushConnect()
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalledTimes(1))
+    await emit(result)
+    expect(screen.getByText('lembra disso')).toBeTruthy()
+
+    await send('/clear')
+
+    await waitFor(() => expect(api.disposeAgent).toHaveBeenCalledWith('c1'))
+    await waitFor(() => expect(screen.queryByText('lembra disso')).toBeNull())
+    // /clear é local: não gasta um turno do modelo.
+    expect(api.sendMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it('funciona também com o agente no meio de um turno', async () => {
+    render(
+      <UiProvider>
+        <App />
+      </UiProvider>
+    )
+    await send('tarefa longa')
+    await waitFor(() => expect(api.startAgent).toHaveBeenCalledTimes(1))
+    await flushConnect()
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalledTimes(1))
+    await emit(partial) // turno ainda em andamento
+
+    await send('/clear')
+
+    await waitFor(() => expect(api.disposeAgent).toHaveBeenCalledWith('c1'))
+    await waitFor(() => expect(screen.queryByText('tarefa longa')).toBeNull())
+    expect(api.sendMessage).toHaveBeenCalledTimes(1)
+  })
+})
