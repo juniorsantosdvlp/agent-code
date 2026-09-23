@@ -97,17 +97,28 @@ export async function checkUpdateStatus(appVersion: string): Promise<UpdateStatu
 /**
  * Fires scripts/sincronizar-e-instalar-agent-code.ps1 -InstalarApp, detached —
  * same spawn pattern as armAppRelauncher (src/main/appRelauncher.ts). No
- * `-Force`: this only makes the script run NOW instead of at the next 5min/3h
- * tick. It still checks restart-guard.json itself and defers (retrying every
- * 5min, see the exit-code-20 path added 22/09/2026) if any session is busy —
- * a Settings button is not the place to offer bypassing that.
+ * `-Force` by default: the script runs NOW instead of at the next 5min/3h tick
+ * but still checks restart-guard.json and defers (retrying every 5min, see the
+ * exit-code-20 path) if any session is busy. With `fecharAgora` it passes
+ * `-Force`, closing the app even with busy sessions — a separate, confirmed
+ * button in Settings, since it interrupts running agents.
  */
-export async function triggerForceUpdate(): Promise<{ disparado: boolean; erro?: string }> {
+export async function triggerForceUpdate(
+  fecharAgora = false
+): Promise<{ disparado: boolean; erro?: string }> {
   const script = join(REPO_PATH, 'scripts', 'sincronizar-e-instalar-agent-code.ps1')
   try {
     const child = spawn(
       'powershell.exe',
-      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-InstalarApp'],
+      [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        script,
+        '-InstalarApp',
+        ...(fecharAgora ? ['-Force'] : [])
+      ],
       { detached: true, stdio: 'ignore', windowsHide: true }
     )
     let falhou: Error | undefined

@@ -27,7 +27,9 @@ param(
   [switch]$InstalarApp,
   # Onde o app instalado vive hoje (atalho do Menu Iniciar aponta pra cá).
   [string]$Exe = "$env:LOCALAPPDATA\Programs\Agent Code\Agent Code.exe",
-  [int]$MaxGuardAge = 15
+  [int]$MaxGuardAge = 15,
+  # Fecha o app mesmo com sessao ocupada (ignora o guard). Uso deliberado, vindo do botao do app.
+  [switch]$Force
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -230,8 +232,9 @@ try {
 
     $relaunch = Join-Path $root 'scripts\relaunch-agent-code.ps1'
     Note "chamando relaunch-agent-code.ps1 (fecha respeitando o guard, instala, reabre)"
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $relaunch `
-      -Exe $Exe -InstallerPath $estado.caminhoInstalador -InstallerArgs '/S' -MaxGuardAge $MaxGuardAge
+    $argsRelaunch = @('-Exe', $Exe, '-InstallerPath', $estado.caminhoInstalador, '-InstallerArgs', '/S', '-MaxGuardAge', $MaxGuardAge)
+    if ($Force) { $argsRelaunch += '-Force' }
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $relaunch @argsRelaunch
     $codigoRelaunch = $LASTEXITCODE
     Note "relaunch-agent-code.ps1 saiu com codigo $codigoRelaunch"
 
