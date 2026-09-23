@@ -148,7 +148,8 @@ import type {
   PlanningResult,
   PlanningRoteiroDto,
   PlanMediaDto,
-  SuggestTitleResult
+  SuggestTitleResult,
+  UpdateStatus
 } from '../shared/ipc'
 
 import type { ContextTurnSummary, ContextTurnDetail, ContextExactCount, ContextTurnChanged } from '../shared/contextSnapshot'
@@ -183,6 +184,8 @@ const api: AgentCodeApi & HandoffQueueUndispatchApi = {
   logFreezes: (batch: FreezeRecord[]): void => {
     void ipcRenderer.invoke(Channels.perfLogFreezes, batch).catch(() => undefined)
   },
+  checkUpdateStatus: (): Promise<UpdateStatus> => ipcRenderer.invoke(Channels.updateCheck),
+  forceUpdate: (): Promise<{ disparado: boolean; erro?: string }> => ipcRenderer.invoke(Channels.updateForce),
   // app config (Settings screen)
   getConfig: (): Promise<AppConfig> => ipcRenderer.invoke(Channels.configGet),
   setConfig: (patch: Partial<AppConfig>): Promise<void> => ipcRenderer.invoke(Channels.configSet, patch),

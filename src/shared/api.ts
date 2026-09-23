@@ -85,7 +85,8 @@ import type {
   SuggestTitleResult,
   OutboxEntryDto,
   WhisperStatus,
-  FreezeLogApi
+  FreezeLogApi,
+  UpdateStatus
 } from './ipc'
 import type {
   AccountUsageResult,
@@ -238,6 +239,10 @@ export type PoAuthorizationListResult = { ok: true; authorizations: PoAuthorizat
 export interface AgentCodeApi extends OfficeApi, FreezeLogApi {
   /** App version from package.json (matches the installer/build). */
   getAppVersion(): Promise<string>
+  /** Compares the local dev clone against the fork and the original project (Settings screen). */
+  checkUpdateStatus(): Promise<UpdateStatus>
+  /** Runs sincronizar-e-instalar-agent-code.ps1 -InstalarApp now instead of waiting for the next loop tick. Still respects the idle guard. */
+  forceUpdate(): Promise<{ disparado: boolean; erro?: string }>
   /** Read the persisted app configuration. */
   getConfig(): Promise<AppConfig>
   /** Persist a partial app configuration (merged with what's on disk). */
