@@ -771,6 +771,37 @@ export function SettingsModal({
                       </span>
                     </div>
                   )}
+                  {updateStatus?.historico &&
+                    (updateStatus.historico.commits.length > 0 || updateStatus.historico.eventos.length > 0) && (
+                      <details className="settings-hint">
+                        <summary style={{ cursor: 'pointer' }}>Últimas modificações e registros da atualização</summary>
+                        {updateStatus.historico.commits.length > 0 && (
+                          <>
+                            <strong>Commits recentes (fork)</strong>
+                            <ul style={{ margin: '4px 0 8px', paddingLeft: 18 }}>
+                              {updateStatus.historico.commits.map((c) => (
+                                <li key={c.sha}>
+                                  <code>{c.sha}</code> {c.assunto}{' '}
+                                  <span style={{ opacity: 0.7 }}>({new Date(c.quando).toLocaleString('pt-BR')})</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </>
+                        )}
+                        {updateStatus.historico.eventos.length > 0 && (
+                          <>
+                            <strong>Registros da atualização</strong>
+                            <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                              {updateStatus.historico.eventos.map((e, i) => (
+                                <li key={`${e.quando}-${i}`}>
+                                  <span style={{ opacity: 0.7 }}>{e.quando}</span> {e.texto}
+                                </li>
+                              ))}
+                            </ul>
+                          </>
+                        )}
+                      </details>
+                    )}
                 </section>
               </>
             )}

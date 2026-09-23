@@ -1695,6 +1695,11 @@ export interface UpdateStatus {
   /** Local main vs. upstream/main (MatheusLarcher/agent-code). */
   original: UpdateRefStatus
   verificadoEm: string
+  /** Últimas modificações: commits recentes da minha-versao e eventos dos logs do script de atualização. */
+  historico?: {
+    commits: { sha: string; quando: string; assunto: string }[]
+    eventos: { quando: string; texto: string }[]
+  }
 }
 
 // Channel name constants — single source of truth.
