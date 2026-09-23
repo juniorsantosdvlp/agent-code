@@ -165,6 +165,14 @@ function installApi(): Record<string, ReturnType<typeof vi.fn>> {
     updateInstallNow: vi.fn(async () => ({ ok: true })),
     updateScheduleWhenIdle: vi.fn(async () => ({ phase: 'agendada', version: null, percent: null, checkedAt: null, error: null, canInstallNow: false, blockedBy: null })),
     updateCancelSchedule: vi.fn(async () => ({ phase: 'pronta', version: null, percent: null, checkedAt: null, error: null, canInstallNow: true, blockedBy: null })),
+    checkUpdateStatus: vi.fn(async () => ({
+      appVersion: 'test',
+      instalado: null,
+      fork: { atualizado: true, commitsAtras: 0, sha: 'abc123' },
+      original: { atualizado: true, commitsAtras: 0, sha: 'abc123' },
+      verificadoEm: new Date().toISOString()
+    })),
+    forceUpdate: vi.fn(async () => ({ disparado: true })),
     downloadFile: vi.fn(async () => ({ ok: true, message: '' })),
     resolvePastedPath: vi.fn(async () => ({ ok: false, error: 'not used in these tests' })),
     downloadPastedUrl: vi.fn(async () => ({ ok: false, error: 'not used in these tests' })),
