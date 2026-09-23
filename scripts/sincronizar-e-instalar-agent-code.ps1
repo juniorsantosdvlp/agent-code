@@ -120,6 +120,16 @@ try {
       [void](Invoke-Logged 'git' 'git' @('checkout', 'minha-versao'))
     }
 
+    # ---- 2a) traz o original: main <- upstream/main (ff-only) e empurra pro fork
+    # (o mesmo que a Action diaria faz; aqui nao depende de esperar 06:00).
+    # Falha aqui nao e fatal: cai pro caminho pelo origin logo abaixo.
+    $codigo = Invoke-Logged 'git' 'git' @('fetch', 'upstream', 'main:main')
+    if ($codigo -eq 0) {
+      [void](Invoke-Logged 'git' 'git' @('push', 'origin', 'main'))
+    } else {
+      Note "AVISO: nao consegui trazer upstream/main (offline ou main divergiu); segue pelo origin/main."
+    }
+
     # ---- 2) sincroniza main (ff-only a partir do origin) ------------------
     $codigo = Invoke-Logged 'git' 'git' @('fetch', 'origin', 'main:main')
     if ($codigo -ne 0) {
