@@ -199,6 +199,15 @@ try {
         Note "npm test ok"
       }
 
+      # Quando o app dispara este script (botao em Configuracoes) ele nao herda
+      # PLAYWRIGHT_BROWSERS_PATH; sem isso o stage-chromium procura no caminho
+      # padrao, onde falta a versao atual do Chromium, e o empacotamento falha.
+      # `playwright install` e no-op se o Chromium ja estiver la.
+      if (-not $env:PLAYWRIGHT_BROWSERS_PATH) {
+        $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $env:LOCALAPPDATA 'ms-playwright'
+      }
+      [void](Invoke-Logged 'playwright' 'npx' @('playwright', 'install', 'chromium'))
+
       $codigo = Invoke-Logged 'package:win' 'npm' @('run', 'package:win')
       $artefato = Join-Path $root 'dist\AgentCode-setup.exe'
       if ($codigo -ne 0 -or -not (Test-Path -LiteralPath $artefato -PathType Leaf)) {
