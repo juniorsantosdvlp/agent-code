@@ -20,6 +20,14 @@ function stubApi(config: AppConfig): Record<string, ReturnType<typeof vi.fn>> {
     })),
     onChromeControlChanged: vi.fn(() => () => {}),
     onChromeBridgeStatusChanged: vi.fn(() => () => {}),
+    checkUpdateStatus: vi.fn(async () => ({
+      appVersion: '0.0.0',
+      instalado: null,
+      fork: { atualizado: true, commitsAtras: 0, sha: 'abc123' },
+      original: { atualizado: true, commitsAtras: 0, sha: 'abc123' },
+      verificadoEm: new Date().toISOString()
+    })),
+    forceUpdate: vi.fn(async () => ({ disparado: true })),
     codexStatus: vi.fn(async () => ({ connected: false }))
   }
   ;(window as unknown as { api: unknown }).api = api
