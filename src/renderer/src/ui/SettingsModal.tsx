@@ -10,7 +10,8 @@ import {
   MEMORISTA_MODELS,
   type AppConfig,
   type CacheInfo,
-  type CodexStatus
+  type CodexStatus,
+  type UpdateStatus
 } from '@shared/ipc'
 import { useUI } from './UiProvider'
 import { PostgresSettingsSection } from './PostgresSettingsSection'
@@ -27,6 +28,7 @@ import {
   IconMic,
   IconMonitor,
   IconMoon,
+  IconRefresh,
   IconShieldCheck,
   IconSettings,
   IconSliders,
@@ -101,6 +103,9 @@ export function SettingsModal({
   const [loaded, setLoaded] = useState(false)
   const [cache, setCache] = useState<CacheInfo | null>(null)
   const [appVersion, setAppVersion] = useState('')
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null)
+  const [updateBusy, setUpdateBusy] = useState(false)
+  const [forceUpdateBusy, setForceUpdateBusy] = useState(false)
   const [codex, setCodex] = useState<CodexStatus>({ connected: false })
   const [codexBusy, setCodexBusy] = useState(false)
   const [claudeBusy, setClaudeBusy] = useState(false)
@@ -122,6 +127,7 @@ export function SettingsModal({
       .finally(() => setLoaded(true))
     void window.api.getCacheInfo().then(setCache)
     void window.api.getAppVersion().then(setAppVersion)
+    void window.api.checkUpdateStatus().then(setUpdateStatus)
     void window.api.codexStatus().then(setCodex)
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') onClose()
@@ -252,6 +258,34 @@ export function SettingsModal({
       )
     } finally {
       setClaudeBusy(false)
+    }
+  }
+
+  const verificarAtualizacao = async (): Promise<void> => {
+    setUpdateBusy(true)
+    try {
+      setUpdateStatus(await window.api.checkUpdateStatus())
+    } finally {
+      setUpdateBusy(false)
+    }
+  }
+
+  // Dispara o script e some — ele pode fechar o app antes desta tela ver o
+  // resultado. "aviso" (não "sucesso") porque disparar não é ter terminado:
+  // o guard de ociosidade ainda decide se instala agora ou tenta de novo em
+  // 5 min (ver src/main/versionCheck.ts).
+  const forcarAtualizacao = async (): Promise<void> => {
+    setForceUpdateBusy(true)
+    try {
+      const { disparado, erro } = await window.api.forceUpdate()
+      notify(
+        disparado ? 'aviso' : 'erro',
+        disparado
+          ? 'Atualização disparada — vai sincronizar e, se ninguém estiver com um agente ocupado, fechar e reabrir sozinho. Pode levar alguns minutos.'
+          : `Não consegui disparar a atualização: ${erro || 'erro desconhecido'}.`
+      )
+    } finally {
+      setForceUpdateBusy(false)
     }
   }
 
@@ -645,6 +679,75 @@ export function SettingsModal({
                           ))}
                         </div>
                       )}
+                    </div>
+                  )}
+                </section>
+
+                <section className="settings-section">
+                  <div className="settings-row">
+                    <span>
+                      <strong>Atualização</strong>
+                      <span className="settings-desc">
+                        Agent Code v{appVersion}
+                        {updateStatus?.instalado
+                          ? ` · instalado ${updateStatus.instalado.versao} (${updateStatus.instalado.sha})`
+                          : ' · atualização automática ainda não instalou nada por aqui'}
+                      </span>
+                    </span>
+                    <div className="settings-actions">
+                      <button className="btn ghost" type="button" onClick={verificarAtualizacao} disabled={updateBusy}>
+                        <IconRefresh size={14} /> {updateBusy ? 'Verificando…' : 'Verificar agora'}
+                      </button>
+                      <button
+                        className="btn primary"
+                        type="button"
+                        onClick={forcarAtualizacao}
+                        disabled={forceUpdateBusy}
+                      >
+                        {forceUpdateBusy ? 'Disparando…' : 'Forçar atualização'}
+                      </button>
+                    </div>
+                  </div>
+                  {updateStatus && (
+                    <div className="settings-row">
+                      <span className="settings-hint">
+                        <span
+                          className="settings-status-dot"
+                          style={{
+                            background: updateStatus.fork.atualizado
+                              ? 'var(--ok)'
+                              : updateStatus.fork.erro
+                                ? 'var(--err)'
+                                : 'var(--warn)'
+                          }}
+                          aria-hidden="true"
+                        />
+                        Fork (minha-versao):{' '}
+                        {updateStatus.fork.erro
+                          ? `não consegui verificar (${updateStatus.fork.erro})`
+                          : updateStatus.fork.atualizado
+                            ? 'atualizado'
+                            : `${updateStatus.fork.commitsAtras} commit(s) atrás`}
+                      </span>
+                      <span className="settings-hint">
+                        <span
+                          className="settings-status-dot"
+                          style={{
+                            background: updateStatus.original.atualizado
+                              ? 'var(--ok)'
+                              : updateStatus.original.erro
+                                ? 'var(--err)'
+                                : 'var(--warn)'
+                          }}
+                          aria-hidden="true"
+                        />
+                        Original (upstream):{' '}
+                        {updateStatus.original.erro
+                          ? `não consegui verificar (${updateStatus.original.erro})`
+                          : updateStatus.original.atualizado
+                            ? 'atualizado'
+                            : `${updateStatus.original.commitsAtras} commit(s) atrás`}
+                      </span>
                     </div>
                   )}
                 </section>

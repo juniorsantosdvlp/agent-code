@@ -40,6 +40,7 @@ import { ensureConfigLoaded, initializeConfigPersistence, loadConfig, updateConf
 import { transcribeAudio, synthesizeSpeech, writeTempAudioSegment, deleteTempAudioSegment } from './openai'
 import { stopLocalSpeech, transcribeLocal } from './speech'
 import { isAuthenticated, logoutClaude } from './auth'
+import { checkUpdateStatus, triggerForceUpdate } from './versionCheck'
 import { runClaudeLogin } from './login'
 import {
   claudeAccounts,
@@ -899,6 +900,19 @@ export function registerIpc(): void {
     else pending.resolve()
   })
   ipcMain.handle(Channels.appGetVersion, () => app.getVersion())
+  // "Atualização" section of the Settings screen — src/main/versionCheck.ts.
+  // Windows-only (that's where the whole auto-update apparatus lives).
+  ipcMain.handle(Channels.updateCheck, async () => {
+    if (process.platform !== 'win32') {
+      const off = { atualizado: false, commitsAtras: null, sha: null, erro: 'Disponível só no Windows.' }
+      return { appVersion: app.getVersion(), instalado: null, fork: off, original: off, verificadoEm: new Date().toISOString() }
+    }
+    return checkUpdateStatus(app.getVersion())
+  })
+  ipcMain.handle(Channels.updateForce, async () => {
+    if (process.platform !== 'win32') return { disparado: false, erro: 'Disponível só no Windows.' }
+    return triggerForceUpdate()
+  })
   // App configuration (Settings screen).
   ipcMain.handle(Channels.configGet, async () => {
     storageLifecycle.repository()

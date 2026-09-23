@@ -1673,11 +1673,39 @@ export interface CacheInfo {
   skillsDir: string
 }
 
+/** One comparison against a git remote (the fork or the original project). */
+export interface UpdateRefStatus {
+  /** True when the local branch is caught up with the remote ref. */
+  atualizado: boolean
+  /** How many commits the local branch is behind, or null when unknown (see `erro`). */
+  commitsAtras: number | null
+  /** Short SHA of the remote ref, when the fetch succeeded. */
+  sha: string | null
+  /** Set when the fetch/compare failed (network, git missing, etc.) — the other fields are then null/false. */
+  erro?: string
+}
+
+/** What the Settings screen shows in the "Atualização" section. */
+export interface UpdateStatus {
+  appVersion: string
+  /** What `scripts/sincronizar-e-instalar-agent-code.ps1` last actually installed, read from its state file. Null if that file doesn't exist yet. */
+  instalado: { sha: string; versao: string; em: string } | null
+  /** Local minha-versao vs. origin/minha-versao (the user's fork). */
+  fork: UpdateRefStatus
+  /** Local main vs. upstream/main (MatheusLarcher/agent-code). */
+  original: UpdateRefStatus
+  verificadoEm: string
+}
+
 // Channel name constants — single source of truth.
 export const Channels = {
   // renderer -> main (invoke)
   /** Read the app version from package.json (shown in the Settings screen). */
   appGetVersion: 'app:get-version',
+  /** Compare the local dev clone against the fork and the original project (Settings screen). */
+  updateCheck: 'update:check',
+  /** Trigger scripts/sincronizar-e-instalar-agent-code.ps1 -InstalarApp now, instead of waiting for the next loop tick. Fire-and-forget; still respects the idle guard. */
+  updateForce: 'update:force',
   /** Read the persisted app configuration (Settings screen). */
   configGet: 'config:get',
   /** Persist the app configuration (Settings screen). */
