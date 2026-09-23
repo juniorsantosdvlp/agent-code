@@ -86,13 +86,63 @@ async function lerEstadoInstalado(): Promise<UpdateStatus['instalado']> {
   }
 }
 
+type Historico = NonNullable<UpdateStatus['historico']>
+
+async function lerCommitsRecentes(): Promise<Historico['commits']> {
+  try {
+    const saida = await execGit(['log', '-8', '--format=%h%x09%cI%x09%s', 'minha-versao'])
+    return saida
+      .split('\n')
+      .filter(Boolean)
+      .map((linha) => {
+        const [sha, quando, ...resto] = linha.split('\t')
+        return { sha, quando, assunto: resto.join('\t') }
+      })
+  } catch {
+    return []
+  }
+}
+
+// Só o que conta a história de uma tentativa de atualização; o resto do log
+// (saída de git/npm/testes) é ruído numa tela de Configurações.
+const EVENTO_RELEVANTE =
+  /(sync ok|build ok|instalacao concluida|reaberto|ABORTADO|AVISO|guard indica|fechando em|pedido de reinicio)/
+
+async function lerEventosDoLog(caminho: string): Promise<Historico['eventos']> {
+  try {
+    const bruto = await readFile(caminho, 'utf8')
+    return bruto
+      .split(/\r?\n/)
+      .map((linha) => /^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\] (.*)$/.exec(linha))
+      .filter((m): m is RegExpExecArray => m !== null && EVENTO_RELEVANTE.test(m[2]))
+      .map((m) => ({ quando: m[1], texto: m[2].replace(/\s+/g, ' ').slice(0, 160) }))
+  } catch {
+    return []
+  }
+}
+
+async function lerHistorico(): Promise<Historico> {
+  const estadoDir = join(process.env.LOCALAPPDATA || '', 'AgentCodeAutoUpdate')
+  const [commits, sync, relaunch] = await Promise.all([
+    lerCommitsRecentes(),
+    lerEventosDoLog(join(estadoDir, 'logs', 'sincronizar-build-instalar.log')),
+    lerEventosDoLog(join(process.env.TEMP || '', 'agent-code-relaunch.log'))
+  ])
+  const eventos = [...sync, ...relaunch]
+    .sort((a, b) => (a.quando < b.quando ? -1 : a.quando > b.quando ? 1 : 0))
+    .slice(-12)
+    .reverse()
+  return { commits, eventos }
+}
+
 export async function checkUpdateStatus(appVersion: string): Promise<UpdateStatus> {
-  const [instalado, fork, original] = await Promise.all([
+  const [instalado, fork, original, historico] = await Promise.all([
     lerEstadoInstalado(),
     compararComRemoto('origin', 'minha-versao', 'minha-versao'),
-    compararComRemoto('upstream', 'main', 'main')
+    compararComRemoto('upstream', 'main', 'main'),
+    lerHistorico()
   ])
-  return { appVersion, instalado, fork, original, verificadoEm: new Date().toISOString() }
+  return { appVersion, instalado, fork, original, verificadoEm: new Date().toISOString(), historico }
 }
 
 /**
