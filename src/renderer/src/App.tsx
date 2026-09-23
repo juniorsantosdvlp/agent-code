@@ -2340,6 +2340,20 @@ export function App(): JSX.Element {
     ): Promise<void> => {
       const conv = getActive()
       if (!conv) return
+      // "/clear": esquece o contexto do modelo (encerra a sessão viva e solta o
+      // sdkSessionId, então o próximo envio abre uma sessão nova) e esvazia a
+      // conversa na tela. É local: não gasta um turno do modelo.
+      if (text.trim() === '/clear' && images.length === 0 && files.length === 0 && fileRefs.length === 0) {
+        if (busyRef.current.has(conv.id)) {
+          notify('aviso', 'O agente está trabalhando — interrompa antes de usar /clear.')
+          return
+        }
+        await stopSession(conv.id, { silent: true })
+        setQueue((q) => q.filter((m) => m.convId !== conv.id))
+        patchConv(conv.id, (c) => ({ ...c, sdkSessionId: null, messages: [], tokens: { ...EMPTY_TOKENS } }))
+        notify('sucesso', 'Contexto limpo. A próxima mensagem começa uma conversa nova.')
+        return
+      }
       let full = text.trim()
       if (chipsRef.current.length) {
         const refs = chipsRef.current
@@ -2357,7 +2371,7 @@ export function App(): JSX.Element {
       setChips([]) // chips were consumed into `full`
       await dispatch(conv, full, text, images, thumbs, files, fileRefs)
     },
-    [dispatch]
+    [dispatch, stopSession, patchConv, notify]
   )
 
   // ---- handoff: Tela de Planejamento → conversa de implementação ----
