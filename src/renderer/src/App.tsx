@@ -2344,10 +2344,8 @@ export function App(): JSX.Element {
       // sdkSessionId, então o próximo envio abre uma sessão nova) e esvazia a
       // conversa na tela. É local: não gasta um turno do modelo.
       if (text.trim() === '/clear' && images.length === 0 && files.length === 0 && fileRefs.length === 0) {
-        if (busyRef.current.has(conv.id)) {
-          notify('aviso', 'O agente está trabalhando — interrompa antes de usar /clear.')
-          return
-        }
+        // Mesmo com o agente ocupado: stopSession interrompe o turno e encerra
+        // a sessão, e é exatamente o que se quer ao pedir para esquecer tudo.
         await stopSession(conv.id, { silent: true })
         setQueue((q) => q.filter((m) => m.convId !== conv.id))
         patchConv(conv.id, (c) => ({ ...c, sdkSessionId: null, messages: [], tokens: { ...EMPTY_TOKENS } }))
