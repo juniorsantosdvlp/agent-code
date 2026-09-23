@@ -12,7 +12,7 @@
 // Every git call is isolated: a failed fetch (offline, git missing, timeout)
 // turns into `{ erro }` for just that section, never an exception that would
 // blank the whole Settings screen.
-import { execFile, spawn } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { UpdateRefStatus, UpdateStatus } from '../shared/ipc'
@@ -108,31 +108,31 @@ export async function triggerForceUpdate(
   fecharAgora = false
 ): Promise<{ disparado: boolean; erro?: string }> {
   const script = join(REPO_PATH, 'scripts', 'sincronizar-e-instalar-agent-code.ps1')
-  try {
-    const child = spawn(
+  // Two things learned the hard way (23/09/2026):
+  //  - `spawn(..., { detached: true })` launches powershell.exe as a console-less
+  //    DETACHED_PROCESS, which exits without running the script — the button
+  //    "worked" (toast) but nothing happened.
+  //  - the script must outlive the app (it closes and reinstalls it), so it is
+  //    created through WMI (Win32_Process.Create): the new process is a child of
+  //    WmiPrvSE, not of this app, and survives it being killed.
+  const linhaDeComando =
+    `powershell.exe -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File "${script}" -InstalarApp` +
+    (fecharAgora ? ' -Force' : '')
+  const comando =
+    `$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create ` +
+    `-Arguments @{ CommandLine = '${linhaDeComando}' }; exit [int]$r.ReturnValue`
+  return new Promise((resolve) => {
+    execFile(
       'powershell.exe',
-      [
-        '-NoProfile',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-File',
-        script,
-        '-InstalarApp',
-        ...(fecharAgora ? ['-Force'] : [])
-      ],
-      { detached: true, stdio: 'ignore', windowsHide: true }
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', comando],
+      { windowsHide: true, timeout: 15_000 },
+      (error) => {
+        if (error) {
+          resolve({ disparado: false, erro: error.message })
+          return
+        }
+        resolve({ disparado: true })
+      }
     )
-    let falhou: Error | undefined
-    child.on('error', (error) => {
-      falhou = error
-    })
-    child.unref()
-    // Give the spawn a beat to fail fast (missing powershell.exe, etc.) before
-    // we report success — anything after this point is the script's own job.
-    await new Promise((resolve) => setTimeout(resolve, 200))
-    if (falhou) return { disparado: false, erro: falhou.message }
-    return { disparado: true }
-  } catch (error) {
-    return { disparado: false, erro: error instanceof Error ? error.message : String(error) }
-  }
+  })
 }
