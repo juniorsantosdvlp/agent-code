@@ -909,9 +909,9 @@ export function registerIpc(): void {
     }
     return checkUpdateStatus(app.getVersion())
   })
-  ipcMain.handle(Channels.updateForce, async () => {
+  ipcMain.handle(Channels.updateForce, async (_event, fecharAgora?: boolean) => {
     if (process.platform !== 'win32') return { disparado: false, erro: 'Disponível só no Windows.' }
-    return triggerForceUpdate()
+    return triggerForceUpdate(fecharAgora === true)
   })
   // App configuration (Settings screen).
   ipcMain.handle(Channels.configGet, async () => {

@@ -86,7 +86,7 @@ export function SettingsModal({
   windowsControlEnabled,
   onToggleWindowsControl
 }: Props): JSX.Element {
-  const { notify } = useUI()
+  const { notify, confirm } = useUI()
   const [tab, setTab] = useState<Tab>(focus === 'openai' ? 'voz' : focus === 'accounts' ? 'modelos' : 'geral')
   const [cfg, setCfg] = useState<AppConfig>(DEFAULT_CONFIG)
   const [showOpenAiKey, setShowOpenAiKey] = useState(false)
@@ -274,14 +274,26 @@ export function SettingsModal({
   // resultado. "aviso" (não "sucesso") porque disparar não é ter terminado:
   // o guard de ociosidade ainda decide se instala agora ou tenta de novo em
   // 5 min (ver src/main/versionCheck.ts).
-  const forcarAtualizacao = async (): Promise<void> => {
+  const forcarAtualizacao = async (fecharAgora = false): Promise<void> => {
+    if (fecharAgora) {
+      const ok = await confirm({
+        title: 'Atualizar e fechar agora?',
+        message:
+          'O app fecha imediatamente, mesmo com agentes ocupados — o trabalho em andamento nas conversas é interrompido. Depois instala a versão nova e reabre sozinho.',
+        confirmLabel: 'Fechar e atualizar',
+        danger: true
+      })
+      if (!ok) return
+    }
     setForceUpdateBusy(true)
     try {
-      const { disparado, erro } = await window.api.forceUpdate()
+      const { disparado, erro } = await window.api.forceUpdate(fecharAgora)
       notify(
         disparado ? 'aviso' : 'erro',
         disparado
-          ? 'Atualização disparada — vai sincronizar e, se ninguém estiver com um agente ocupado, fechar e reabrir sozinho. Pode levar alguns minutos.'
+          ? fecharAgora
+            ? 'Atualização disparada — o app vai fechar em instantes, instalar e reabrir.'
+            : 'Atualização disparada — vai sincronizar e, se ninguém estiver com um agente ocupado, fechar e reabrir sozinho. Pode levar alguns minutos.'
           : `Não consegui disparar a atualização: ${erro || 'erro desconhecido'}.`
       )
     } finally {
@@ -701,10 +713,19 @@ export function SettingsModal({
                       <button
                         className="btn primary"
                         type="button"
-                        onClick={forcarAtualizacao}
+                        onClick={() => void forcarAtualizacao(false)}
                         disabled={forceUpdateBusy}
                       >
                         {forceUpdateBusy ? 'Disparando…' : 'Forçar atualização'}
+                      </button>
+                      <button
+                        className="btn ghost"
+                        type="button"
+                        onClick={() => void forcarAtualizacao(true)}
+                        disabled={forceUpdateBusy}
+                        title="Fecha o app mesmo com agentes ocupados, instala e reabre"
+                      >
+                        Atualizar e fechar agora
                       </button>
                     </div>
                   </div>

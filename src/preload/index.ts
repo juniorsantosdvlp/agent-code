@@ -83,7 +83,8 @@ function on<T>(channel: string, cb: (payload: T) => void): () => void {
 const api: AgentCodeApi = {
   getAppVersion: (): Promise<string> => ipcRenderer.invoke(Channels.appGetVersion),
   checkUpdateStatus: (): Promise<UpdateStatus> => ipcRenderer.invoke(Channels.updateCheck),
-  forceUpdate: (): Promise<{ disparado: boolean; erro?: string }> => ipcRenderer.invoke(Channels.updateForce),
+  forceUpdate: (fecharAgora?: boolean): Promise<{ disparado: boolean; erro?: string }> =>
+    ipcRenderer.invoke(Channels.updateForce, fecharAgora),
   // app config (Settings screen)
   getConfig: (): Promise<AppConfig> => ipcRenderer.invoke(Channels.configGet),
   setConfig: (patch: Partial<AppConfig>): Promise<void> => ipcRenderer.invoke(Channels.configSet, patch),

@@ -86,7 +86,8 @@ export interface AgentCodeApi {
   /** Compares the local dev clone against the fork and the original project (Settings screen). */
   checkUpdateStatus(): Promise<UpdateStatus>
   /** Runs sincronizar-e-instalar-agent-code.ps1 -InstalarApp now instead of waiting for the next loop tick. Still respects the idle guard. */
-  forceUpdate(): Promise<{ disparado: boolean; erro?: string }>
+  /** `fecharAgora` passa -Force: fecha o app mesmo com sessão ocupada. */
+  forceUpdate(fecharAgora?: boolean): Promise<{ disparado: boolean; erro?: string }>
   /** Read the persisted app configuration. */
   getConfig(): Promise<AppConfig>
   /** Persist a partial app configuration (merged with what's on disk). */
