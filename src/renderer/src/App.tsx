@@ -3358,7 +3358,7 @@ export function App(): JSX.Element {
 
   return (
     <div className="app">
-      <AgenteSecreto />
+      <AgenteSecreto trabalhando={busyIds.size > 0} />
       <IndicadorAtualizacao />
       {/* A casca já está montada, mas vazia: as conversas só existem depois que
           a persistência responde, e num banco em pasta sincronizada isso leva
