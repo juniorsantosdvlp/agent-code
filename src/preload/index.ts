@@ -65,7 +65,8 @@ import type {
   PlanningRef,
   PlanningResult,
   PlanningRoteiroDto,
-  SuggestTitleResult
+  SuggestTitleResult,
+  AgentKindResult
 } from '../shared/ipc'
 
 function on<T>(channel: string, cb: (payload: T) => void): () => void {
@@ -195,6 +196,8 @@ const api: AgentCodeApi = {
     ipcRenderer.invoke(Channels.conversationsSaveAll, list),
   suggestConversationTitle: (req: { text: string }): Promise<SuggestTitleResult> =>
     ipcRenderer.invoke(Channels.conversationSuggestTitle, req),
+  classifyAgentKind: (req: { description: string; existing: string[] }): Promise<AgentKindResult> =>
+    ipcRenderer.invoke(Channels.agentKindClassify, req),
 
   // OpenAI voice (chat)
   transcribeAudio: (

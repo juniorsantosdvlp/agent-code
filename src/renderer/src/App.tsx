@@ -71,8 +71,11 @@ import { ChatPanel } from './components/ChatPanel'
 import type { VigiaDoubt } from './components/VigiaChip'
 import { BrowserPanel } from './components/BrowserPanel'
 import { CrewChip } from './components/CrewChip'
-import { buildCrew, workingMembers } from './crew'
-import { IconBoard, IconGlobe, IconUsers } from './components/Icons'
+import { buildCrew, lineText, workingMembers } from './crew'
+import { buildOffice } from './office'
+import { AgentOffice } from './components/AgentOffice'
+import { useAgentKindClassifier } from './useAgentKindClassifier'
+import { IconBoard, IconGlobe, IconOffice, IconUsers } from './components/Icons'
 import { Sidebar, type SidebarProject } from './components/Sidebar'
 import { UsageBadge, type UsageProviders } from './components/UsageBadge'
 import { RightPaneTabs, type RightPane } from './components/RightPaneTabs'
@@ -548,6 +551,10 @@ export function App(): JSX.Element {
   // agents panel. Deliberately OUTSIDE `Conversation`: this is live state, not
   // history — it never touches the chat feed nor gets persisted to disk.
   const [tracks, setTracks] = useState<Record<string, TrackMap>>({})
+  // Tipo de domínio de cada trilha (para as ilhas do Escritório): uma
+  // classificação por trilha, sem a UI esperar — até voltar, a mesa fica em
+  // "outros".
+  useAgentKindClassifier(tracks, setTracks)
   // Árvore de consumo de tokens ao vivo, por conversa — alimentada pelos
   // eventos `llm-call` (ver TokenUsagePanel, que funde isto com o histórico
   // persistido lido do banco ao trocar de conversa).
@@ -2805,6 +2812,21 @@ export function App(): JSX.Element {
     ]
   )
   const crewWorking = useMemo(() => workingMembers(crew), [crew])
+  // O Escritório da conversa ativa: as mesmas trilhas, agrupadas por tipo. O
+  // principal vem do elenco (mesmo estado e mesma linha do Quadro), mas uma
+  // permissão pendente nesta conversa o põe em "asking" — é o que pede ação.
+  const officeIslands = useMemo(() => {
+    const principal = crew.find((m) => m.role === 'principal')
+    return buildOffice({
+      tracks: activeTracks,
+      principal: {
+        state: activePermission ? 'asking' : principal?.state ?? 'idle',
+        line: principal ? lineText(principal.line) : undefined,
+        ...(principal?.startedAt === undefined ? {} : { startedAt: principal.startedAt })
+      }
+    })
+  }, [crew, activeTracks, activePermission])
+  const officeAgentCount = Object.keys(activeTracks).length
   const runningTrackCount = useMemo(
     () => Object.values(activeTracks).filter((t) => t.status === 'running').length,
     [activeTracks]
@@ -2826,7 +2848,7 @@ export function App(): JSX.Element {
       })),
     [permissions, conversations]
   )
-  // The right-hand pane holds ONE of two tabs (browser / board); `browserMinimized`
+  // The right-hand pane holds ONE of three tabs (browser / board / office); `browserMinimized`
   // collapses the whole pane.
   const selectRightPane = useCallback((pane: RightPane): void => {
     setRightPane(pane)
@@ -3378,8 +3400,13 @@ export function App(): JSX.Element {
                   liveAgents={runningTrackCount}
                   browserTabs={browserState.tabs.length}
                   boardProgress={boardTabProgress}
+                  officeAgents={officeAgentCount}
                 />
-                {rightPane === 'board' ? (
+                {rightPane === 'office' ? (
+                  // Só montado com a aba visível: trocar de aba desmonta a cena
+                  // e libera o WebGL. Somente leitura — nada aqui controla agente.
+                  <AgentOffice islands={officeIslands} tracks={activeTracks} />
+                ) : rightPane === 'board' ? (
                   <BoardPanel
                     projectCwd={activeCwd}
                     conversationId={active?.id ?? ''}
@@ -3419,7 +3446,7 @@ export function App(): JSX.Element {
               </div>
             </>
           )}
-          {/* Rail: pane collapsed — one button per tab, so either is one click away. */}
+          {/* Rail: pane collapsed — one button per tab, so any of them is one click away. */}
           {browserMinimized && (
             <div className="right-rail">
               <button
@@ -3442,6 +3469,16 @@ export function App(): JSX.Element {
                 {boardTabProgress && boardTabProgress.total > 0 && (
                   <span className="rail-badge">{`${boardTabProgress.done}/${boardTabProgress.total}`}</span>
                 )}
+              </button>
+              <button
+                type="button"
+                className={`right-rail-btn${runningTrackCount > 0 ? ' live' : ''}`}
+                onClick={() => selectRightPane('office')}
+                title="Escritório: quem está trabalhando, agrupado por tipo"
+              >
+                <IconOffice size={15} />
+                Escritório
+                {officeAgentCount > 0 && <span className="rail-badge">{officeAgentCount}</span>}
               </button>
             </div>
           )}

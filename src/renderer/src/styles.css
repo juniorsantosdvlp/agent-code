@@ -5675,11 +5675,16 @@ button svg {
   background: var(--bg-2);
 }
 .right-pane > .browser-panel,
-.right-pane > .agents-panel {
+.right-pane > .agents-panel,
+.right-pane > .office {
   flex: 1 1 auto;
   min-height: 0;
   min-width: 0;
   border-left: none;
+}
+/* Abaixo das abas, `height: 100%` do .office estouraria a altura do painel. */
+.right-pane > .office {
+  height: auto;
 }
 .pane-tabs {
   display: flex;
@@ -7481,4 +7486,434 @@ span.board-agent-dot {
   .crew-mini {
     animation: none;
   }
+}
+
+/* ---------------------------------------------------------------------------
+   Escritório de agentes: cena isométrica (three.js) + rótulos HTML por cima,
+   ou a lista HTML quando não há WebGL; painel de detalhe à direita.
+   --------------------------------------------------------------------------- */
+.office {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+}
+.office-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 50% 45%, var(--bg-3) 0%, var(--bg) 75%);
+}
+.office-scene {
+  position: absolute;
+  inset: 0;
+}
+.office-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+.office-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  container: office-overlay / inline-size;
+}
+/* Posicionado por JS (canto superior esquerdo já resolvido pela anticolisão:
+   balão acima da mesa, rótulo da ilha abaixo da base); escondido até o 1º
+   quadro e quando perde a disputa por espaço. */
+.office-anchor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  visibility: hidden;
+  will-change: transform;
+}
+.office-anchor * {
+  pointer-events: auto;
+}
+
+.office-island-label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-2) 88%, transparent);
+  color: var(--muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.office-island-label.has-attention {
+  border-color: color-mix(in srgb, var(--warn) 55%, var(--line));
+}
+.office-island-name {
+  color: var(--text);
+  font-weight: 600;
+}
+/* Agrupa contagem/resumo/+N só para o rótulo compacto poder quebrar em duas
+   linhas; fora disso não interfere no flex. */
+.office-island-meta {
+  display: contents;
+}
+.office-island-total::before,
+.office-island-summary::before {
+  content: "·";
+  margin-right: 6px;
+  color: var(--line);
+}
+.office-island-more {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-3);
+  color: var(--text);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+/* Em cena: menor e com teto de largura (o resumo completo fica no title). */
+.office-island-label.is-compact {
+  gap: 5px;
+  max-width: 240px;
+  padding: 2px 8px;
+  font-size: 10.5px;
+}
+.office-island-label.is-compact .office-island-total::before,
+.office-island-label.is-compact .office-island-summary::before {
+  margin-right: 5px;
+}
+.office-island-label.is-compact .office-island-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.office-island-label.is-compact .office-island-name,
+.office-island-label.is-compact .office-island-total,
+.office-island-label.is-compact .office-island-more {
+  flex: none;
+}
+
+/* Canvas estreito (painel de detalhe aberto, aba lateral fina): rótulos mais
+   magros para caber mais deles sem esconder ninguém. */
+@container office-overlay (max-width: 460px) {
+  /* Nome numa linha, números na de baixo: metade da largura. */
+  .office-island-label.is-compact {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+    border-radius: 8px;
+  }
+  .office-island-label.is-compact .office-island-meta {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .office-island-label.is-compact .office-island-total::before {
+    content: none;
+  }
+  .office-anchor-desk .office-balloon {
+    max-width: 112px;
+    padding: 2px 7px;
+    font-size: 11px;
+  }
+}
+
+/* Mesa parada em cena: só um ponto, ainda clicável (nome no title). */
+.office-dot {
+  display: block;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 2px solid var(--bg-2);
+  border-radius: 50%;
+  background: var(--muted);
+  box-shadow: 0 0 0 1px var(--line), 0 2px 5px rgba(0, 0, 0, 0.35);
+  opacity: 0.8;
+  cursor: pointer;
+}
+.office-dot:hover {
+  opacity: 1;
+  background: var(--text);
+}
+.office-dot:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.office-balloon {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  max-width: 132px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+  line-height: 1.25;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
+}
+.office-anchor-desk .office-balloon::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 8px;
+  height: 8px;
+  translate: -50% 0;
+  rotate: 45deg;
+  background: inherit;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.office-balloon:hover {
+  border-color: var(--accent-dim);
+}
+.office-balloon:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.office-balloon.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 3px 10px rgba(0, 0, 0, 0.35);
+}
+.office-balloon.state-idle {
+  opacity: 0.72;
+}
+.office-balloon.state-working .office-balloon-tool {
+  color: var(--accent);
+}
+.office-balloon.state-asking {
+  border-color: color-mix(in srgb, var(--warn) 60%, var(--line));
+}
+.office-balloon.state-failed {
+  border-color: color-mix(in srgb, var(--err) 60%, var(--line));
+}
+.office-balloon-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.office-balloon-tool {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10.5px;
+}
+.office-warn {
+  position: absolute;
+  top: -9px;
+  right: -8px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--warn);
+  color: #1f1e1d;
+  font-size: 11px;
+  line-height: 1;
+}
+.office-balloon.state-failed .office-warn {
+  background: var(--err);
+}
+
+/* Modo sem WebGL: ilhas empilhadas, mesas como botões. */
+.office-fallback {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.office-fallback-island {
+  padding: 10px 12px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+}
+.office-fallback-island .office-island-label {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.office-fallback-desks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+/* Painel de detalhe (somente leitura). */
+.office-detail {
+  flex: 0 0 min(440px, 48%);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--line);
+  background: var(--bg-2);
+  overflow: auto;
+}
+.office-detail-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-2);
+}
+.office-detail-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.office-detail-state {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--bg-3);
+  color: var(--muted);
+  font-size: 11px;
+}
+.office-detail-state.state-working {
+  color: var(--accent);
+}
+.office-detail-state.state-asking {
+  color: var(--warn);
+}
+.office-detail-state.state-failed {
+  color: var(--err);
+}
+.office-detail-count {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.office-detail-close {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.office-detail-close:hover {
+  background: var(--bg-3);
+  color: var(--text);
+}
+.office-detail-label {
+  margin: 10px 12px 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  word-break: break-word;
+}
+.office-detail-note {
+  margin: 10px 12px 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-style: italic;
+}
+.office-steps {
+  list-style: none;
+  margin: 0;
+  padding: 10px 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.office-step {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+}
+.office-step.is-error {
+  border-color: color-mix(in srgb, var(--err) 50%, var(--line));
+}
+.office-step-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+}
+.office-step-n {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.office-step-tool {
+  color: var(--accent);
+  font-weight: 600;
+}
+.office-step-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+.office-step-live {
+  margin-left: auto;
+  color: var(--accent);
+  font-size: 11px;
+}
+.office-step-label {
+  margin-bottom: 3px;
+  color: var(--muted);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.office-step .code-block.hljs {
+  max-height: 260px;
+  overflow: auto;
+}
+.office-step-result pre {
+  margin: 0;
+  max-height: 200px;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-3);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.office-step-result.is-error .office-step-label {
+  color: var(--err);
+}
+.office-step-result.is-error pre {
+  background: color-mix(in srgb, var(--err) 12%, var(--bg-3));
+  border: 1px solid color-mix(in srgb, var(--err) 45%, transparent);
 }

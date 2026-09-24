@@ -55,6 +55,7 @@ import { exportFlowPdf } from './planning/flowPdfExport'
 import { PlanningConversations, planningStartOptions } from './planning/planningConversations'
 import { setPlanningDataRoot } from './planning/planningRoot'
 import { registerConversationTitleIpc } from './titles/conversationTitleIpc'
+import { registerAgentKindIpc } from './agentKind/agentKindIpc'
 import { Po } from './po/po'
 import { Memorista } from './memoria/memorista'
 import { forgetUsedMemories, usedMemories } from './memoria/memoriasUsadas'
@@ -1127,6 +1128,8 @@ export function registerIpc(): void {
   ipcMain.handle(Channels.planningExportPdf, (e, req: unknown) => exportFlowPdf(e.sender, req))
   // Título automático da conversa (claude-haiku-4-5): a lógica mora em titles/.
   registerConversationTitleIpc({ handle: (channel, listener) => ipcMain.handle(channel, listener) })
+  // Tipo do subagente no Escritório (claude-haiku-4-5): a lógica mora em agentKind/.
+  registerAgentKindIpc({ handle: (channel, listener) => ipcMain.handle(channel, listener) })
   ipcMain.handle(Channels.tasksDetail, async (_e, taskId: string) => {
     try {
       return await buildTaskDetail(taskLedger(), taskId)

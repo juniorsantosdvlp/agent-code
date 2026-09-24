@@ -104,4 +104,14 @@ describe('preload — contrato IPC do Codex e do agente', () => {
     expect(electronMock.invoke).toHaveBeenCalledWith(Channels.tokenUsageHistory, 'c1')
     expect(result).toBe(history)
   })
+
+  it('classifica o tipo do subagente pelo canal agentKind:classify', async () => {
+    electronMock.invoke.mockResolvedValue({ ok: true, kind: 'seguranca' })
+    const req = { description: 'audita o login', existing: ['dados'] }
+
+    const result = await api.classifyAgentKind(req)
+
+    expect(electronMock.invoke).toHaveBeenCalledWith(Channels.agentKindClassify, req)
+    expect(result).toEqual({ ok: true, kind: 'seguranca' })
+  })
 })

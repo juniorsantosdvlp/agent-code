@@ -64,7 +64,8 @@ import type {
   PlanningRef,
   PlanningResult,
   PlanningRoteiroDto,
-  SuggestTitleResult
+  SuggestTitleResult,
+  AgentKindResult
 } from './ipc'
 
 /** The surface exposed on `window.api` by the preload script. */
@@ -211,6 +212,9 @@ export interface AgentCodeApi {
   /** Nome curto (claude-haiku-4-5, one-shot) para a conversa a partir da 1ª
    *  mensagem. Nunca lança: `ok: false` quando não houver título. */
   suggestConversationTitle(req: { text: string }): Promise<SuggestTitleResult>
+  /** Tipo de domínio (claude-haiku-4-5, one-shot) de um subagente, pela descrição
+   *  da delegação e os tipos que já existem. Nunca lança: `ok: false` quando não houver tipo. */
+  classifyAgentKind(req: { description: string; existing: string[] }): Promise<AgentKindResult>
 
   /** Transcribe recorded audio (base64) to text via OpenAI. `error: 'no-key'`
    *  means the user hasn't set an OpenAI API key yet. */
