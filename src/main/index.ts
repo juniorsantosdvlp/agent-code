@@ -78,7 +78,7 @@ import { BUNDLED_VOCABULARY } from './voice/hotwords'
 import { registerAndroidToolchainIpc } from './android/androidToolchainIpc'
 import { claudeAuthProbe, isAuthenticated, logoutClaude } from './auth'
 import { claudeAuthExpiry, claudeConnectedForCard } from './authExpiry'
-import { checkUpdateStatus, triggerForceUpdate } from './versionCheck'
+import { checkUpdateStatus, lerProgressoAtualizacao, triggerForceUpdate } from './versionCheck'
 import { runClaudeLogin } from './login'
 import {
   claudeAccounts,
@@ -1918,6 +1918,10 @@ export function registerIpc(): void {
   ipcMain.handle(Channels.updateForce, async (_event, fecharAgora?: boolean) => {
     if (process.platform !== 'win32') return { disparado: false, erro: 'Disponível só no Windows.' }
     return triggerForceUpdate(fecharAgora === true)
+  })
+  ipcMain.handle(Channels.updateProgress, async () => {
+    if (process.platform !== 'win32') return { estado: 'ocioso', percentual: 0, fase: '' }
+    return lerProgressoAtualizacao()
   })
   // App configuration (Settings screen).
   ipcMain.handle(Channels.configGet, async () => {

@@ -154,6 +154,7 @@ import type {
   PlanningRoteiroDto,
   PlanMediaDto,
   SuggestTitleResult,
+  UpdateProgress,
   UpdateStatus
 } from '../shared/ipc'
 
@@ -199,6 +200,7 @@ const api: AgentCodeApi & HandoffQueueUndispatchApi = {
   checkUpdateStatus: (): Promise<UpdateStatus> => ipcRenderer.invoke(Channels.updateCheck),
   forceUpdate: (fecharAgora?: boolean): Promise<{ disparado: boolean; erro?: string }> =>
     ipcRenderer.invoke(Channels.updateForce, fecharAgora),
+  getUpdateProgress: (): Promise<UpdateProgress> => ipcRenderer.invoke(Channels.updateProgress),
   // app config (Settings screen)
   getConfig: (): Promise<AppConfig> => ipcRenderer.invoke(Channels.configGet),
   setConfig: (patch: Partial<AppConfig>): Promise<void> => ipcRenderer.invoke(Channels.configSet, patch),
