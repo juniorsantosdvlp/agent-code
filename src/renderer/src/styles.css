@@ -7637,6 +7637,7 @@ span.board-agent-dot {
   height: 6px;
   border-radius: 50%;
   background: var(--accent);
+}
 /* ---------------------------------------------------------------------------
    Escritório de agentes: cena isométrica (three.js) + rótulos HTML por cima,
    ou a lista HTML quando não há WebGL; painel de detalhe à direita.
