@@ -158,6 +158,7 @@ import { usePlanningModel } from './planning/usePlanningModel'
 import { NewPlanningDialog } from './planning/NewPlanningDialog'
 import { planProjectsOf, startOfficePlan } from './planning/officePlanStart'
 import { AgenteSecreto } from './components/AgenteSecreto'
+import { IndicadorAtualizacao } from './components/IndicadorAtualizacao'
 import { HandoffButton } from './planning/HandoffDialog'
 import { findManagerConversation, runRemotePlanningAction } from './planning/remoteHandoff'
 import { applyRemoteModelChange, remoteModelFields, type RemoteModelControls } from './remote/remoteModel'
@@ -4802,6 +4803,7 @@ export function App(): JSX.Element {
   return (
     <div className="app">
       <AgenteSecreto />
+      <IndicadorAtualizacao />
       {/* A casca já está montada, mas vazia: as conversas só existem depois que
           a persistência responde, e num banco em pasta sincronizada isso leva
           segundos. Sem este aviso, a janela aberta e sem nada dentro é o que o
