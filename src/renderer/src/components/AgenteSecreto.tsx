@@ -227,12 +227,6 @@ export function AgenteSecreto({ trabalhando = false }: { trabalhando?: boolean }
     const queixo = new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 12), pele)
     queixo.position.set(0.08, 0.06, 0)
     cabeca.add(queixo)
-    const bochechas = [-0.1, 0.1].map((z) => {
-      const b = new THREE.Mesh(ESFERA, pele)
-      b.position.set(0.1, 0.11, z)
-      cabeca.add(b)
-      return b
-    })
     const cabelo = new THREE.Mesh(
       new THREE.SphereGeometry(0.2, 28, 18, 0, Math.PI * 2, 0, Math.PI * 0.5),
       cabeloMat
@@ -330,15 +324,17 @@ export function AgenteSecreto({ trabalhando = false }: { trabalhando?: boolean }
       corpo.rotation.z = -0.22 * pedalar + 0.06 * descansar
       const folego = descansar * Math.sin(t * 3.2) * 0.035 + (1 - descansar) * Math.sin(t * 1.6) * 0.01
       tronco.scale.set((0.8 + 0.28 * g) * (1 + folego), 1, (1.25 + 0.3 * g) * (1 + folego))
-      barriga.scale.set(0.12 + 0.13 * g, 0.2 + 0.07 * g, 0.2 + 0.1 * g)
-      barriga.position.copy(L(-0.17 + 0.07 * g, 1.46, 0))
+      barriga.scale.set(0.14 + 0.08 * g, 0.24 + 0.04 * g, 0.22 + 0.08 * g)
+      barriga.position.copy(L(-0.19 + 0.05 * g, 1.48, 0))
       const frente = -0.08 + 0.07 * g
       peito.position.copy(L(frente, 1.8, 0))
       gravataMesh.position.copy(L(frente + 0.01, 1.76, 0))
       gravataMesh.rotation.z = -0.25 * g
       for (const { lapela, z } of lapelas) lapela.position.copy(L(frente + 0.015, 1.8, z))
-      for (const b of bochechas) b.scale.setScalar(0.035 + 0.045 * g)
-      queixo.scale.set(1, 0.8, 1.1 + 0.3 * g)
+      // engorda por inteiro: rosto e pescoço alargam junto com o corpo
+      cranio.scale.set(1.02 + 0.08 * g, 1.14, 0.9 + 0.12 * g)
+      queixo.scale.set(1 + 0.1 * g, 0.8, 1.1 + 0.15 * g)
+      pescoco.scale.set(1 + 0.25 * g, 1, 1 + 0.25 * g)
 
       bike.updateMatrixWorld(true)
       const noCorpo = (p: THREE.Vector3): THREE.Vector3 => bike.worldToLocal(corpo.localToWorld(p.clone()))
@@ -352,32 +348,32 @@ export function AgenteSecreto({ trabalhando = false }: { trabalhando?: boolean }
         const quadril = noCorpo(L(-0.28, 1.24, 0.12 * perna.lado))
         const pe = pedal.clone().add(v(0, 0.06, 0))
         const joelho = joelhoEntre(quadril, pe, 0.56, 0.62)
-        const rCoxa = 0.1 * (1 + 0.55 * g)
-        const rCanela = 0.075 * (1 + 0.35 * g)
+        const rCoxa = 0.1 * (1 + 0.4 * g)
+        const rCanela = 0.075 * (1 + 0.4 * g)
         ligar(perna.coxa, quadril, joelho, rCoxa)
         ligar(perna.canela, joelho, pe, rCanela)
         perna.quadril.position.copy(quadril)
         perna.quadril.scale.setScalar(rCoxa)
         perna.joelho.position.copy(joelho)
-        perna.joelho.scale.setScalar(rCanela * 1.08)
+        perna.joelho.scale.setScalar(rCanela)
         perna.sapato.position.set(pe.x + 0.05, pe.y - 0.045, pe.z)
       })
 
       // maleta e mãos: da alça da maleta (parado) para as manoplas (pedalando)
-      maleta.position.copy(v(0.12, 1.36, 0)).lerp(v(0.64, 0.98, 0), pedalar)
+      maleta.position.copy(v(0.12, 1.36, 0)).lerp(v(0.6, 1.17, 0), pedalar)
       maleta.rotation.z = Math.sin(t * 5) * 0.05 * pedalar
       bracos.forEach((b) => {
         const ombro = noCorpo(L(-0.22, 1.86, 0.22 * b.lado))
         const mao = v(0.12, 1.56, 0.06 * b.lado).lerp(v(0.5, 1.36, 0.24 * b.lado), pedalar)
         const cotovelo = ombro.clone().lerp(mao, 0.5).add(v(-0.06, -0.14, 0.07 * b.lado))
-        const rBraco = 0.07 * (1 + 0.45 * g)
-        const rAnte = 0.062 * (1 + 0.3 * g)
+        const rBraco = 0.07 * (1 + 0.4 * g)
+        const rAnte = 0.062 * (1 + 0.4 * g)
         ligar(b.braco, ombro, cotovelo, rBraco)
         ligar(b.antebraco, cotovelo, mao, rAnte)
         b.ombro.position.copy(ombro)
         b.ombro.scale.setScalar(rBraco)
         b.cotovelo.position.copy(cotovelo)
-        b.cotovelo.scale.setScalar(rAnte * 1.05)
+        b.cotovelo.scale.setScalar(rAnte)
         ligar(b.punho, cotovelo.clone().lerp(mao, 0.86), mao, 0.05 + 0.01 * g)
         b.mao.position.copy(mao)
         b.mao.scale.set(0.06, 0.045, 0.055)
