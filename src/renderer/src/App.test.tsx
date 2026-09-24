@@ -158,6 +158,7 @@ function installApi(): Record<string, ReturnType<typeof vi.fn>> {
       verificadoEm: new Date().toISOString()
     })),
     forceUpdate: vi.fn(async () => ({ disparado: true })),
+    getUpdateProgress: vi.fn(async () => ({ estado: 'ocioso', percentual: 0, fase: '' })),
     downloadFile: vi.fn(async () => ({ ok: true, message: '' })),
     resolvePastedPath: vi.fn(async () => ({ ok: false, error: 'not used in these tests' })),
     downloadPastedUrl: vi.fn(async () => ({ ok: false, error: 'not used in these tests' })),

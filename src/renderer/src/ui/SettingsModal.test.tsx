@@ -19,6 +19,7 @@ function stubApi(config: AppConfig): Record<string, ReturnType<typeof vi.fn>> {
       verificadoEm: new Date().toISOString()
     })),
     forceUpdate: vi.fn(async () => ({ disparado: true })),
+    getUpdateProgress: vi.fn(async () => ({ estado: 'ocioso', percentual: 0, fase: '' })),
     codexStatus: vi.fn(async () => ({ connected: false }))
   }
   ;(window as unknown as { api: unknown }).api = api

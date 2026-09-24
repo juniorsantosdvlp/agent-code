@@ -1686,6 +1686,18 @@ export interface UpdateRefStatus {
 }
 
 /** What the Settings screen shows in the "Atualização" section. */
+/**
+ * Progress of scripts/sincronizar-e-instalar-agent-code.ps1, for the small
+ * update indicator in the corner of the window. `andamento` while the script
+ * runs; `pronto` once a newer package than the installed one is built and
+ * only needs the app to restart; `ocioso` otherwise.
+ */
+export interface UpdateProgress {
+  estado: 'ocioso' | 'andamento' | 'pronto'
+  percentual: number
+  fase: string
+}
+
 export interface UpdateStatus {
   appVersion: string
   /** What `scripts/sincronizar-e-instalar-agent-code.ps1` last actually installed, read from its state file. Null if that file doesn't exist yet. */
@@ -1711,6 +1723,8 @@ export const Channels = {
   updateCheck: 'update:check',
   /** Trigger scripts/sincronizar-e-instalar-agent-code.ps1 -InstalarApp now, instead of waiting for the next loop tick. Fire-and-forget; still respects the idle guard. */
   updateForce: 'update:force',
+  /** Read the progress of the running update script (corner indicator). */
+  updateProgress: 'update:progress',
   /** Read the persisted app configuration (Settings screen). */
   configGet: 'config:get',
   /** Persist the app configuration (Settings screen). */

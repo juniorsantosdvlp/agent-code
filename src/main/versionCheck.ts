@@ -13,9 +13,9 @@
 // turns into `{ erro }` for just that section, never an exception that would
 // blank the whole Settings screen.
 import { execFile } from 'node:child_process'
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { UpdateRefStatus, UpdateStatus } from '../shared/ipc'
+import type { UpdateProgress, UpdateRefStatus, UpdateStatus } from '../shared/ipc'
 
 const REPO_PATH = 'C:\\source\\agent-code'
 const GIT_TIMEOUT_MS = 15_000
@@ -62,6 +62,57 @@ interface EstadoAutoUpdate {
   shaInstalado?: string
   versaoInstalada?: string
   instaladoEm?: string
+  shaEmpacotado?: string
+  caminhoInstalador?: string
+}
+
+const ESTADO_DIR = (): string => join(process.env.LOCALAPPDATA || '', 'AgentCodeAutoUpdate')
+
+async function lerJson<T>(caminho: string): Promise<T | null> {
+  try {
+    // PowerShell grava com BOM; JSON.parse rejeita.
+    return JSON.parse((await readFile(caminho, 'utf8')).replace(/^﻿/, '')) as T
+  } catch {
+    return null
+  }
+}
+
+function processoVivo(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The script writes progresso.json while it runs and deletes it at the end;
+ * a leftover file from a killed run is ignored by checking its pid. Once it
+ * is gone, "ready to restart" is read from estado.json: a package built for a
+ * newer SHA than the installed one.
+ */
+export async function lerProgressoAtualizacao(): Promise<UpdateProgress> {
+  const progresso = await lerJson<{ percentual?: number; fase?: string; pid?: number }>(
+    join(ESTADO_DIR(), 'progresso.json')
+  )
+  if (progresso?.pid && processoVivo(progresso.pid)) {
+    return {
+      estado: 'andamento',
+      percentual: Math.max(0, Math.min(99, progresso.percentual ?? 0)),
+      fase: progresso.fase ?? ''
+    }
+  }
+  const estado = await lerJson<EstadoAutoUpdate>(join(ESTADO_DIR(), 'estado.json'))
+  if (
+    estado?.shaEmpacotado &&
+    estado.shaEmpacotado !== estado.shaInstalado &&
+    estado.caminhoInstalador &&
+    (await stat(estado.caminhoInstalador).then(() => true, () => false))
+  ) {
+    return { estado: 'pronto', percentual: 100, fase: 'Pronta para instalar' }
+  }
+  return { estado: 'ocioso', percentual: 0, fase: '' }
 }
 
 /** Best-effort read of what the loop script last actually installed. Null if absent/unreadable/empty. */

@@ -69,6 +69,7 @@ import type {
   PlanMediaDto,
   SuggestTitleResult,
   OutboxEntryDto,
+  UpdateProgress,
   UpdateStatus
 } from './ipc'
 import type {
@@ -88,6 +89,8 @@ export interface AgentCodeApi {
   /** Runs sincronizar-e-instalar-agent-code.ps1 -InstalarApp now instead of waiting for the next loop tick. Still respects the idle guard. */
   /** `fecharAgora` passa -Force: fecha o app mesmo com sessão ocupada. */
   forceUpdate(fecharAgora?: boolean): Promise<{ disparado: boolean; erro?: string }>
+  /** Progress of the update script, polled by the corner indicator. */
+  getUpdateProgress(): Promise<UpdateProgress>
   /** Read the persisted app configuration. */
   getConfig(): Promise<AppConfig>
   /** Persist a partial app configuration (merged with what's on disk). */
