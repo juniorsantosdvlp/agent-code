@@ -7555,3 +7555,18 @@ span.board-agent-dot {
   text-align: right;
   margin-top: 2px;
 }
+
+/* Agente secreto (three.js) no canto inferior esquerdo; decorativo, não captura cliques. */
+.agente-secreto {
+  position: fixed;
+  left: 8px;
+  bottom: 8px;
+  width: 190px;
+  height: 170px;
+  pointer-events: none;
+  z-index: 2;
+}
+.agente-secreto canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
