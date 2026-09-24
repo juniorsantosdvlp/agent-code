@@ -75,6 +75,30 @@ if (-not $Force) {
   Note ("guarda ok: ocioso, {0} sessao(oes), estado de {1:N0}s atras" -f $guard.sessions, $age)
 }
 
+# ---- 1b) Tela de instalação ---------------------------------------------
+# Só quando há instalador: é a janela que o usuário vê entre o app fechar e
+# reabrir (scripts/tela-instalacao.ps1, processo à parte lendo este arquivo).
+$telaArquivo = Join-Path $env:TEMP 'agent-code-tela-instalacao.json'
+function Tela([string]$etapa, [string]$detalhe = '') {
+  if (-not $InstallerPath) { return }
+  try {
+    @{ etapa = $etapa; detalhe = $detalhe } | ConvertTo-Json | Set-Content -LiteralPath $telaArquivo -Encoding utf8
+  } catch { }
+}
+if ($InstallerPath) {
+  Tela 'fechando'
+  $telaScript = Join-Path $PSScriptRoot 'tela-instalacao.ps1'
+  if (Test-Path -LiteralPath $telaScript -PathType Leaf) {
+    try {
+      Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden -ArgumentList @(
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', "`"$telaScript`"", '-Arquivo', "`"$telaArquivo`""
+      ) | Out-Null
+    } catch {
+      Note ("AVISO: nao abri a tela de instalacao -- " + $_.Exception.Message)
+    }
+  }
+}
+
 # ---- 2) Fechar depois de 5 s --------------------------------------------
 Note "fechando em $CloseDelay s"
 Start-Sleep -Seconds $CloseDelay
@@ -103,20 +127,24 @@ if ($running.Count) {
 # arquivo em uso, ou o assistente NSIS aparece pedindo para fechar). Mesmo se
 # o instalador falhar, o script sempre segue para reabrir o que já está em
 # disco — nunca deixa o usuario sem nenhum app aberto.
+$instalacaoFalhou = $false
 if ($InstallerPath) {
   if (-not (Test-Path -LiteralPath $InstallerPath -PathType Leaf)) {
     Note "AVISO: instalador nao encontrado ($InstallerPath) -- reabrindo o que ja esta instalado"
   } else {
     Note "instalando silenciosamente: $InstallerPath $InstallerArgs"
+    Tela 'instalando'
     try {
       $installProc = Start-Process -FilePath $InstallerPath -ArgumentList $InstallerArgs -PassThru -Wait
       if ($installProc.ExitCode -eq 0) {
         Note "instalacao concluida"
       } else {
         Note ("AVISO: instalador saiu com codigo " + $installProc.ExitCode + " -- reabrindo mesmo assim")
+        $instalacaoFalhou = $true
       }
     } catch {
       Note ("AVISO: falha ao rodar o instalador -- " + $_.Exception.Message + " -- reabrindo mesmo assim")
+      $instalacaoFalhou = $true
     }
   }
 }
@@ -126,11 +154,14 @@ if ($InstallerPath) {
 # Reabrir com o processo antigo ainda vivo faz o novo se ver como segunda
 # instância e fechar na hora, sem erro na tela.
 Note "reabrindo em $OpenDelay s"
+Tela 'reabrindo'
 Start-Sleep -Seconds $OpenDelay
 try {
   $started = Start-Process -FilePath $Exe -PassThru
   Note ("reaberto pid=" + $started.Id)
+  Tela $(if ($instalacaoFalhou) { 'erro' } else { 'concluido' })
 } catch {
   Note ("FALHA ao reabrir: " + $_.Exception.Message)
+  Tela 'erro' 'Nao consegui reabrir o app'
   exit 1
 }
