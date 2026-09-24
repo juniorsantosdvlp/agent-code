@@ -1,4 +1,5 @@
 import type { ChatEvent } from '@shared/ipc'
+import { FALLBACK_KIND, normalizeKind } from '@shared/agentKind'
 
 /**
  * Live view of WHO is working inside a conversation — the agents panel's data.
@@ -31,8 +32,25 @@ export interface AgentTrack {
   id: string
   /** Human label ("Explore: onde o plano é montado"), never a raw tool id. */
   label: string
+  /**
+   * A descrição REAL da delegação — `taskDescription`, `input.description` ou
+   * `input.subject`, nessa ordem —, sem prefixo e sem corte. NUNCA o
+   * `input.prompt`: o prompt é o enunciado inteiro (pode trazer código,
+   * histórico, dados do usuário) e é por isso que ele não sai daqui para o
+   * classificador de tipo. Ausente quando o SDK não mandou descrição nenhuma;
+   * o `label` ainda cai no prompt para exibição, esta não.
+   */
+  description?: string
   /** Subagent kind reported by the SDK (`Explore`, `general-purpose`, …). */
   subagentType?: string
+  /**
+   * Tipo de DOMÍNIO do trabalho ("seguranca", "frontend"…), já normalizado por
+   * `normalizeKind` — é o que o Escritório usa para agrupar mesas em ilhas.
+   * NÃO é o `subagentType` do SDK: aquele diz quem foi chamado, este diz sobre
+   * o quê. Chega depois da abertura (vem de uma classificação) e, uma vez
+   * definido, não muda — ver `setTrackKind`.
+   */
+  tipo?: string
   status: 'running' | 'done' | 'error'
   startedAt: number
   endedAt?: number
@@ -80,6 +98,15 @@ function labelFor(input: unknown, subagentType?: string, taskDescription?: strin
   return subagentType ? `${subagentType}: ${short}` : short
 }
 
+/**
+ * A descrição de verdade da delegação, ou `undefined`. Mesma ordem do
+ * `labelFor`, mas SEM o `input.prompt` no fim — ver `AgentTrack.description`.
+ */
+function descriptionFor(input: unknown, taskDescription?: string): string | undefined {
+  const i = (input ?? {}) as Record<string, unknown>
+  return firstString(taskDescription, i.description, i.subject)
+}
+
 function trimSteps(steps: TrackStep[]): TrackStep[] {
   return steps.length > MAX_STEPS ? steps.slice(steps.length - MAX_STEPS) : steps
 }
@@ -105,9 +132,11 @@ export function reduceTracks(map: TrackMap, e: ChatEvent, now = Date.now()): Tra
     // Main agent delegating (`Task`): opens a track, still "running".
     if (e.parentToolUseId == null) {
       if (!SPAWN_TOOLS.has(e.name)) return map
+      const description = descriptionFor(e.input, e.taskDescription)
       const track: AgentTrack = {
         id: e.id,
         label: labelFor(e.input, e.subagentType, e.taskDescription),
+        ...(description ? { description } : {}),
         ...(e.subagentType ? { subagentType: e.subagentType } : {}),
         status: 'running',
         startedAt: now,
@@ -129,10 +158,14 @@ export function reduceTracks(map: TrackMap, e: ChatEvent, now = Date.now()): Tra
       steps: []
     }
     const step: TrackStep = { id: e.id, name: e.name, input: e.input, startedAt: now }
+    // A late taskDescription is the track's real description from now on
+    // (this also covers the adoption above, which starts without one).
+    const lateDescription = descriptionFor(undefined, e.taskDescription)
     return {
       ...map,
       [existing.id]: {
         ...existing,
+        ...(lateDescription ? { description: lateDescription } : {}),
         // A late label beats the placeholder one.
         label: e.taskDescription
           ? labelFor(undefined, e.subagentType ?? existing.subagentType, e.taskDescription)
@@ -177,6 +210,20 @@ export function sortTracks(map: TrackMap): AgentTrack[] {
     if (b.status === 'running' && a.status !== 'running') return 1
     return b.startedAt - a.startedAt
   })
+}
+
+/**
+ * Define o tipo de domínio de uma trilha — UMA vez só. A mesa não pode trocar
+ * de ilha porque uma segunda classificação discordou da primeira; a única
+ * mudança permitida é sair de "sem tipo" (que o Escritório mostra em
+ * `outros`). Trilha inexistente ou já classificada devolve o MESMO map, para
+ * quem chama pular o setState. Tipo inválido vira `FALLBACK_KIND`: a
+ * classificação aconteceu, só não disse nada útil.
+ */
+export function setTrackKind(map: TrackMap, trackId: string, kind: unknown): TrackMap {
+  const track = map[trackId]
+  if (!track || track.tipo !== undefined) return map
+  return { ...map, [trackId]: { ...track, tipo: normalizeKind(kind) ?? FALLBACK_KIND } }
 }
 
 /** Close every still-running track — the turn ended, nothing is working now. */

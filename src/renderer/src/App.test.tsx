@@ -220,7 +220,9 @@ function installApi(): Record<string, ReturnType<typeof vi.fn>> {
     onRemoteConversationAction: vi.fn(() => () => {}),
     remoteUnpair: vi.fn(async () => ({ running: false, url: '', ip: '', port: 0, token: '', clients: 0, relayConnected: false })),
     onRemoteBuildProgress: vi.fn(() => () => {}),
-    onRemoteClients: vi.fn(() => () => {})
+    onRemoteClients: vi.fn(() => () => {}),
+    // Escritório: classificação do tipo de cada trilha (uma chamada por trilha).
+    classifyAgentKind: vi.fn(async () => ({ ok: true, kind: 'dados' }))
   }
   ;(window as unknown as { api: unknown }).api = api
   return api
@@ -2844,5 +2846,87 @@ describe('App — /clear', () => {
     await waitFor(() => expect(api.disposeAgent).toHaveBeenCalledWith('c1'))
     await waitFor(() => expect(screen.queryByText('tarefa longa')).toBeNull())
     expect(api.sendMessage).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('App — aba Escritório', () => {
+  // Estes testes passam pelo Quadro; o BoardPanel lê o quadro de tarefas.
+  beforeEach(() => {
+    api.tasksBoard = vi.fn(async () => ({ available: false, items: [] }))
+  })
+
+  const spawn: ChatEvent = {
+    kind: 'tool-use',
+    id: 'task1',
+    name: 'Agent',
+    input: { description: 'mapear as tabelas do DW', prompt: 'NÃO ENVIAR: prompt inteiro' },
+    parentToolUseId: null,
+    subagentType: 'Explore'
+  }
+
+  it('só monta o AgentOffice com a aba visível; Quadro e Navegador seguem trocando', async () => {
+    const { container } = render(<UiProvider><App /></UiProvider>)
+    const officeTab = await screen.findByRole('tab', { name: /Escritório/ })
+    expect(container.querySelector('.right-pane > .office')).toBeNull()
+
+    fireEvent.click(officeTab)
+    expect(container.querySelector('.right-pane > .office')).toBeTruthy()
+    expect(officeTab.getAttribute('aria-selected')).toBe('true')
+    // O principal está sempre na primeira ilha.
+    expect(within(container.querySelector('.office') as HTMLElement).getByRole('region', { name: 'Principal' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('tab', { name: /Quadro/ }))
+    expect(container.querySelector('.office')).toBeNull()
+    fireEvent.click(screen.getByRole('tab', { name: /Navegador/ }))
+    expect(container.querySelector('.office')).toBeNull()
+    expect(screen.getByRole('tab', { name: /Navegador/ }).getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('trilha nova é classificada uma vez, só pela descrição, e a mesa muda de ilha', async () => {
+    const { container } = render(<UiProvider><App /></UiProvider>)
+    fireEvent.click(await screen.findByRole('tab', { name: /Escritório/ }))
+    await emit(spawn)
+    await waitFor(() => expect(api.classifyAgentKind).toHaveBeenCalledTimes(1))
+    const req = api.classifyAgentKind.mock.calls[0][0] as { description: string; existing: string[] }
+    expect(req.description).toBe('mapear as tabelas do DW')
+    expect(req.existing.length).toBeLessThanOrEqual(50)
+    const office = container.querySelector('.office') as HTMLElement
+    await waitFor(() => expect(within(office).getByRole('region', { name: 'Dados' })).toBeTruthy())
+    // O contador da aba é o nº de agentes (trilhas) da conversa.
+    expect(screen.getByRole('tab', { name: /Escritório/ }).textContent).toBe('Escritório1')
+
+    // Mais eventos da mesma trilha não pedem de novo.
+    await emit({ kind: 'tool-use', id: 's1', name: 'Read', input: { file_path: '/a' }, parentToolUseId: 'task1' })
+    await act(async () => undefined)
+    expect(api.classifyAgentKind).toHaveBeenCalledTimes(1)
+  })
+
+  it('permissão pendente põe o principal em "asking"', async () => {
+    let onPermission: ((req: unknown) => void) | null = null
+    api.onPermissionRequest.mockImplementation((cb: (req: unknown) => void) => {
+      onPermission = cb
+      return () => {}
+    })
+    const { container } = render(<UiProvider><App /></UiProvider>)
+    fireEvent.click(await screen.findByRole('tab', { name: /Escritório/ }))
+    await waitFor(() => expect(onPermission).not.toBeNull())
+    await act(async () => {
+      onPermission?.({ convId: 'c1', req: { id: 'p1', toolName: 'Bash', input: { command: 'ls' } } })
+    })
+    const office = container.querySelector('.office') as HTMLElement
+    await waitFor(() =>
+      expect(within(office).getByRole('button', { name: /Principal: .*precisa de atenção/ })).toBeTruthy()
+    )
+  })
+
+  it('o rail recolhido tem o botão Escritório, que reabre o painel nele', async () => {
+    const { container } = render(<UiProvider><App /></UiProvider>)
+    await screen.findByRole('tab', { name: /Escritório/ })
+    fireEvent.click(screen.getByTitle('Recolher painel'))
+    const rail = container.querySelector('.right-rail') as HTMLElement
+    expect(rail).toBeTruthy()
+    fireEvent.click(within(rail).getByRole('button', { name: /Escritório/ }))
+    expect(container.querySelector('.right-pane > .office')).toBeTruthy()
+    expect(screen.getByRole('tab', { name: /Escritório/ }).getAttribute('aria-selected')).toBe('true')
   })
 })

@@ -1817,6 +1817,8 @@ export const Channels = {
   conversationsDelete: 'conversations:delete',
   /** Nome curto para a conversa a partir da 1ª mensagem (LLM barato, one-shot). */
   conversationSuggestTitle: 'conversation:suggestTitle',
+  /** Tipo de domínio de um subagente (ilha do Escritório), pela descrição (LLM barato, one-shot). */
+  agentKindClassify: 'agentKind:classify',
   agentStart: 'agent:start',
   agentSend: 'agent:send',
   /** Fila de espera das conversas, gravada no banco (sobrevive ao reinício). */
@@ -2239,3 +2241,7 @@ export type FlowPdfResult = { ok: true; path: string } | { ok: false; canceled?:
 /** Resposta de Channels.conversationSuggestTitle. `ok: false` = sem título
  *  (entrada inválida, LLM falhou, estourou o tempo): quem chamou fica com o recuo. */
 export type SuggestTitleResult = { ok: true; title: string } | { ok: false }
+
+/** Resposta de Channels.agentKindClassify. `kind` já normalizado (shared/agentKind.ts);
+ *  `ok: false` = sem tipo (entrada inválida, LLM falhou, estourou o tempo). */
+export type AgentKindResult = { ok: true; kind: string } | { ok: false }

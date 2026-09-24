@@ -71,6 +71,7 @@ import { exportFlowPdf } from './planning/flowPdfExport'
 import { PlanningConversations, planningStartOptions } from './planning/planningConversations'
 import { setPlanningDataRoot } from './planning/planningRoot'
 import { registerConversationTitleIpc } from './titles/conversationTitleIpc'
+import { registerAgentKindIpc } from './agentKind/agentKindIpc'
 import { Po } from './po/po'
 import { Memorista } from './memoria/memorista'
 import { forgetUsedMemories, usedMemories } from './memoria/memoriasUsadas'
@@ -1204,6 +1205,8 @@ export function registerIpc(): void {
     handle: (channel, listener) => ipcMain.handle(channel, listener),
     repository: () => (storageLifecycle.canMutate() ? storageLifecycle.repository() : null)
   })
+  // Tipo do subagente no Escritório (claude-haiku-4-5): a lógica mora em agentKind/.
+  registerAgentKindIpc({ handle: (channel, listener) => ipcMain.handle(channel, listener) })
   ipcMain.handle(Channels.tasksDetail, async (_e, taskId: string) => {
     try {
       return await buildTaskDetail(taskLedger(), taskId)

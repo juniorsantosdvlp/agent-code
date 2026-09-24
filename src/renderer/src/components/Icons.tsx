@@ -249,6 +249,15 @@ export const IconBoard = (p: IconProps): JSX.Element => (
   </Svg>
 )
 
+/** O Escritório: duas mesas com monitor lado a lado, vistas de frente. */
+export const IconOffice = (p: IconProps): JSX.Element => (
+  <Svg {...p}>
+    <rect x="3" y="5" width="7" height="5" rx="1" />
+    <rect x="14" y="5" width="7" height="5" rx="1" />
+    <path d="M6.5 10v2M17.5 10v2M2 14h20M4 14v6M20 14v6" />
+  </Svg>
+)
+
 /** A single agent/work unit — used on each track row. */
 export const IconSparkStar = (p: IconProps): JSX.Element => (
   <Svg {...p}>
