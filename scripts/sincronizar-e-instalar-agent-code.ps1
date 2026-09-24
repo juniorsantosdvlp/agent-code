@@ -101,6 +101,14 @@ if (Test-Path -LiteralPath $lockPath -PathType Leaf) {
 }
 Write-Json $lockPath @{ pid = $PID; at = (Get-Date).ToUniversalTime().ToString('o') }
 
+# Progresso lido pela barra de atualizacao do app (src/main/versionCheck.ts).
+# So existe enquanto esta execucao roda; o fim e deduzido do estado.json.
+$progressoPath = Join-Path $stateDir 'progresso.json'
+function Set-Progresso([int]$percentual, [string]$fase) {
+  Write-Json $progressoPath @{ percentual = $percentual; fase = $fase; pid = $PID; em = (Get-Date).ToUniversalTime().ToString('o') }
+}
+Set-Progresso 3 'Sincronizando com o original'
+
 try {
   Push-Location $root
   try {
@@ -147,6 +155,7 @@ try {
     }
 
     # ---- 4) rebase sobre main ---------------------------------------------
+    Set-Progresso 12 'Aplicando as mudancas do fork'
     $codigo = Invoke-Logged 'git' 'git' @('rebase', 'main')
     if ($codigo -ne 0) {
       [void](Invoke-Logged 'git' 'git' @('rebase', '--abort'))
@@ -187,11 +196,13 @@ try {
 
     if ($precisaBuildar) {
       Note "build necessario: $shaAtual"
+      Set-Progresso 20 'Conferindo os tipos'
       $codigo = Invoke-Logged 'typecheck' 'npm' @('run', 'typecheck')
       if ($codigo -ne 0) {
         Note "ABORTADO: typecheck falhou -- isso e regressao real (baseline e limpa). Nao builda, nao instala."
         exit 15
       }
+      Set-Progresso 32 'Rodando os testes'
       $codigo = Invoke-Logged 'test' 'npm' @('test')
       if ($codigo -ne 0) {
         Note "AVISO: npm test com falhas -- so informativo (baseline ja tem falhas pre-existentes conhecidas). Build continua."
@@ -206,7 +217,10 @@ try {
       if (-not $env:PLAYWRIGHT_BROWSERS_PATH) {
         $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $env:LOCALAPPDATA 'ms-playwright'
       }
+      Set-Progresso 55 'Preparando o navegador embutido'
       [void](Invoke-Logged 'playwright' 'npx' @('playwright', 'install', 'chromium'))
+
+      Set-Progresso 62 'Empacotando o app'
 
       $codigo = Invoke-Logged 'package:win' 'npm' @('run', 'package:win')
       $artefato = Join-Path $root 'dist\AgentCode-setup.exe'
@@ -277,6 +291,7 @@ try {
     Pop-Location
   }
 } finally {
+  Remove-Item -LiteralPath $progressoPath -Force -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $lockPath -Force -ErrorAction SilentlyContinue
   Note "===== fim ====="
 }
