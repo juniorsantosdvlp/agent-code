@@ -7561,7 +7561,18 @@ span.board-agent-dot {
   margin-top: 2px;
 }
 
-/* Agente secreto (three.js) no canto inferior esquerdo; decorativo, não captura cliques. */
+/* Agente secreto (three.js) no canto inferior esquerdo. O canvas não captura
+   cliques: o acerto no boneco é feito por raio no componente, e durante a
+   pegadinha da gola ele cresce até cobrir a janela (tamanho inline). */
+html.agente-mira,
+html.agente-mira * {
+  cursor: grab !important;
+}
+html.agente-agarrando,
+html.agente-agarrando * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
 .agente-secreto {
   position: fixed;
   left: 8px;
