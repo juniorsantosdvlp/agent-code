@@ -12,7 +12,8 @@
 #      prompt de scripts\resolver-conflitos-prompt.md (git push bloqueado);
 #   4) confere o resultado SEM confiar no agente: rebase concluído, HEAD em cima
 #      do original, árvore limpa, nenhum marcador de conflito no diff, nenhum
-#      commit próprio perdido (conforme a política) e `npm run typecheck` ok;
+#      commit próprio perdido (conforme a política), testes do original intactos
+#      (checagens A e B, só com git) e `npm run typecheck` ok;
 #   5) só então: tag backup/minha-versao-<data> no sha antigo e move o branch.
 #
 # Exit: 0 = resolvido (sem -NoApply o BranchRef já aponta para o resultado);
@@ -20,16 +21,27 @@
 # Em qualquer saída diferente de 0 o BranchRef fica exatamente como estava.
 # Relatório sempre em $StateDir\ultima-resolucao.json (a tela do app lê).
 #
-# Uso manual (dry-run, não mexe em branch nenhum):
+# Uso manual (dry-run, não mexe em branch nenhum; o branch temporário é apagado
+# no fim, a não ser com -ManterBranch):
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\resolver-conflitos-agente.ps1 -NoApply
+#
+# Só as checagens A/B (testes do original) contra um resultado já pronto, sem
+# worktree, sem agente e sem gravar relatório (imprime o JSON; exit 0 ou 3):
+#   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\resolver-conflitos-agente.ps1 `
+#     -SomenteValidar -Resultado auto-resolucao/<data> -BranchRef backup/minha-versao-<data>
 #
 # [switch], não [bool]: parâmetros atravessam fronteira de processo.
 param(
   [string]$RepoPath = (Split-Path -Parent $PSScriptRoot),
   [string]$BaseRef = 'main',
   [string]$BranchRef = 'minha-versao',
-  # Dry-run: não cria tag nem move o BranchRef; o resultado fica no branch temporário.
+  # Dry-run: não cria tag nem move o BranchRef; o branch temporário é apagado no fim.
   [switch]$NoApply,
+  # Com -NoApply: guarda o resultado no branch temporário auto-resolucao/<data>.
+  [switch]$ManterBranch,
+  # Roda só as checagens A/B contra -Resultado (ref ou sha) e sai.
+  [switch]$SomenteValidar,
+  [string]$Resultado = '',
   [string]$StateDir = (Join-Path $env:LOCALAPPDATA 'AgentCodeAutoUpdate'),
   # Só para o teste automatizado: roda este .ps1 na worktree no lugar do Claude Code.
   [string]$AgenteDeTeste = ''
@@ -57,7 +69,6 @@ New-Item -ItemType Directory -Force -Path $StateDir, $logDir, $dirAgente | Out-N
 
 $utf8SemBom = New-Object System.Text.UTF8Encoding $false
 $script:wtCriada = $false
-$script:manterBranchTemp = $false
 $script:hashLockInstalado = $null
 
 function Note([string]$message) {
@@ -138,6 +149,9 @@ $rel = [ordered]@{
   shaBase = $null; shaAntes = $null; shaDepois = $null; tagBackup = $null; dryRun = [bool]$NoApply
   commitsDescartados = @(); arquivosResolvidos = @(); resumo = ''; log = $logPath
   branchTemporario = $null; saidaAgente = $null
+  # Linhas do original removidas pelo resultado em código de produção (checagem
+  # B): não recusam, só ficam visíveis para o usuário conferir.
+  avisos = @()
   # true quando a falha é do resultado (agente chamado/validação recusou), não
   # de infraestrutura (npm ci, worktree, erro inesperado): só essa conta para
   # a anti-repetição.
@@ -147,7 +161,8 @@ $rel = [ordered]@{
 function Finalizar([string]$resultado, [string]$motivo, [int]$codigo) {
   if ($script:wtCriada) {
     Remove-WorktreeResolucao
-    if (-not $script:manterBranchTemp) { [void](Invoke-Git @('-C', $RepoPath, 'branch', '-D', $branchTemp) -Quieto) }
+    if ($ManterBranch) { $rel.branchTemporario = $branchTemp }
+    else { [void](Invoke-Git @('-C', $RepoPath, 'branch', '-D', $branchTemp) -Quieto) }
   }
   $rel.em = (Get-Date).ToUniversalTime().ToString('o')
   $rel.resultado = $resultado
@@ -185,6 +200,41 @@ function Find-Claude {
 function Format-Arg([string]$a) {
   if ($a -eq '' -or $a -match '[\s"]') { return '"' + ($a -replace '"', '\"') + '"' }
   return $a
+}
+
+# Push impossível no processo do agente, sem gravar nada na config do
+# repositório: GIT_CONFIG_COUNT/KEY_n/VALUE_n valem como `git -c` para todo git
+# que ele (e os filhos dele) rodar. pushurl inválido nos remotes conhecidos e
+# pushInsteadOf para push direto em URL. Soma às entradas que já existirem.
+$script:destinoBloqueado = 'no-push://bloqueado'
+function Set-BloqueioPush {
+  $n = 0
+  if ("$env:GIT_CONFIG_COUNT" -match '^\d+$') { $n = [int]$env:GIT_CONFIG_COUNT }
+  $pares = @(
+    @('remote.origin.pushurl', $script:destinoBloqueado),
+    @('remote.upstream.pushurl', $script:destinoBloqueado)
+  )
+  foreach ($prefixo in @('https://', 'http://', 'ssh://', 'git://', 'git@')) {
+    $pares += , @("url.$($script:destinoBloqueado)/.pushInsteadOf", $prefixo)
+  }
+  foreach ($p in $pares) {
+    Set-Item -LiteralPath "env:GIT_CONFIG_KEY_$n" -Value $p[0]
+    Set-Item -LiteralPath "env:GIT_CONFIG_VALUE_$n" -Value $p[1]
+    $n++
+  }
+  $env:GIT_CONFIG_COUNT = "$n"
+  Note "push bloqueado no processo do agente (GIT_CONFIG_COUNT=$n)"
+}
+
+function Clear-BloqueioPush([string]$countAntes) {
+  $inicio = 0
+  if ($countAntes -match '^\d+$') { $inicio = [int]$countAntes }
+  $fim = 0
+  if ("$env:GIT_CONFIG_COUNT" -match '^\d+$') { $fim = [int]$env:GIT_CONFIG_COUNT }
+  for ($i = $inicio; $i -lt $fim; $i++) {
+    Remove-Item -LiteralPath "env:GIT_CONFIG_KEY_$i", "env:GIT_CONFIG_VALUE_$i" -ErrorAction SilentlyContinue
+  }
+  if ($countAntes) { $env:GIT_CONFIG_COUNT = $countAntes } else { Remove-Item -LiteralPath 'env:GIT_CONFIG_COUNT' -ErrorAction SilentlyContinue }
 }
 
 # Roda o agente com o prompt pelo stdin (sem limite de linha de comando) e
@@ -260,6 +310,139 @@ function Get-Descartados([string]$shaDepois, $decisoes) {
   return , $lista
 }
 
+# ---- checagens A e B: testes do original intactos (só git) -------------
+# Caso real que motivou: o agente trocou o RightPaneTabs.test.tsx do original
+# pelo da minha versão; typecheck e marcadores não pegam isso.
+$script:reArquivoTeste = '\.(test|spec)\.[^/\\]+$'
+# it( / test( / describe( (também .only/.skip/.todo/.concurrent/.each(...)) e o
+# 1º argumento quando é string com aspas simples, duplas ou crase.
+$script:reTitulo = '(?<![\w.$])(?:it|test|describe)(?:\.(?:only|skip|todo|concurrent|each\s*\([^)]*\)))*\s*\(\s*(?:''((?:\\.|[^''\\])*)''|"((?:\\.|[^"\\])*)"|`((?:\\.|[^`\\])*)`)'
+
+function Get-ConteudoNoCommit([string]$dir, [string]$sha, [string]$caminho) {
+  $r = Invoke-Git @('-C', $dir, 'show', "${sha}:$caminho") -Quieto
+  if ($r.Codigo -ne 0) { return $null }
+  return ($r.Saida -join "`n")
+}
+
+function Get-Titulos([string]$texto) {
+  $t = New-Object 'System.Collections.Generic.HashSet[string]'
+  foreach ($m in [regex]::Matches("$texto", $script:reTitulo)) {
+    foreach ($g in 1..3) { if ($m.Groups[$g].Success) { [void]$t.Add($m.Groups[$g].Value); break } }
+  }
+  return , $t
+}
+
+# Conteúdo comparável de uma linha: sem espaços nas pontas; linha vazia ou só
+# de chaves/parênteses/pontuação não conta.
+function Format-LinhaComparavel([string]$linha) {
+  $t = $linha.Trim()
+  if ($t -match '^[{}()\[\];,]*$') { return $null }
+  return $t
+}
+
+# Linhas '+' (pelo caminho do lado novo) e '-' (pelo caminho do lado antigo) de
+# um diff, contadas por conteúdo: @{ arquivo = Dictionary[conteúdo, vezes] }.
+function Get-LinhasDiff([string]$dir, [string]$de, [string]$ate) {
+  $r = Invoke-Git @('-C', $dir, '-c', 'core.quotepath=off', 'diff', '--no-color', '--no-ext-diff', '--no-renames', '-U0', "$de..$ate") -Quieto
+  $mais = @{}; $menos = @{}
+  $velho = ''; $novo = ''; $noCabecalho = $true
+  foreach ($linha in $r.Saida) {
+    if ($linha.StartsWith('diff --git ')) { $noCabecalho = $true; continue }
+    if ($noCabecalho) {
+      if ($linha.StartsWith('--- ')) { $velho = ($linha.Substring(4) -replace '^a/', '').TrimEnd("`t") }
+      elseif ($linha.StartsWith('+++ ')) { $novo = ($linha.Substring(4) -replace '^b/', '').TrimEnd("`t") }
+      elseif ($linha.StartsWith('@@')) { $noCabecalho = $false }
+      continue
+    }
+    if ($linha.StartsWith('@@')) { continue }
+    if ($linha.StartsWith('+')) { $alvo = $mais; $arq = $novo }
+    elseif ($linha.StartsWith('-')) { $alvo = $menos; $arq = $velho }
+    else { continue }
+    $c = Format-LinhaComparavel $linha.Substring(1)
+    if ($null -eq $c) { continue }
+    if (-not $alvo.ContainsKey($arq)) { $alvo[$arq] = New-Object 'System.Collections.Generic.Dictionary[string,int]' }
+    $d = $alvo[$arq]
+    if ($d.ContainsKey($c)) { $d[$c]++ } else { $d[$c] = 1 }
+  }
+  return [pscustomobject]@{ Mais = $mais; Menos = $menos }
+}
+
+function Format-Lista([string[]]$itens, [int]$max) {
+  $texto = ($itens | Select-Object -First $max) -join '; '
+  if ($itens.Count -gt $max) { $texto += " (e mais $($itens.Count - $max))" }
+  return $texto
+}
+
+# (A) título de it/test/describe que existe no original e sumiu do resultado;
+# (B) linha que o original acrescentou desde o ponto em que a minha versão saiu
+#     dele (merge-base) e que o resultado removeu: em teste recusa, em produção
+#     só vira aviso. Exceção da A: título que a própria minha versão já tinha
+#     tirado (existia no merge-base e não existe no sha antigo) não conta.
+# Devolve Falha ($null ou motivo) e Avisos.
+function Test-TestesDoOriginal([string]$dir, [string]$base, [string]$antes, [string]$resultado) {
+  $falhas = @(); $avisos = @()
+  $mb = GitValor @('-C', $dir, 'merge-base', $base, $antes)
+  $arquivosTeste = @((Invoke-Git @('-C', $dir, '-c', 'core.quotepath=off', 'diff', '--name-only', '--no-renames', "$base..$resultado") -Quieto).Saida |
+    Where-Object { $_ -match $script:reArquivoTeste })
+
+  $sumidos = @()
+  foreach ($arq in $arquivosTeste) {
+    $txtBase = Get-ConteudoNoCommit $dir $base $arq
+    if ($null -eq $txtBase) { continue }  # arquivo de teste novo da minha versão
+    $tBase = Get-Titulos $txtBase
+    if ($tBase.Count -eq 0) { continue }
+    $tRes = Get-Titulos (Get-ConteudoNoCommit $dir $resultado $arq)
+    $tMb = $null; $tAntes = $null
+    if ($mb) { $tMb = Get-Titulos (Get-ConteudoNoCommit $dir $mb $arq); $tAntes = Get-Titulos (Get-ConteudoNoCommit $dir $antes $arq) }
+    foreach ($t in $tBase) {
+      if ($tRes.Contains($t)) { continue }
+      if ($null -ne $tMb -and $tMb.Contains($t) -and -not $tAntes.Contains($t)) {
+        Note "checagem A: '$t' em $arq foi tirado pela propria minha versao -- nao conta"
+        continue
+      }
+      $sumidos += "${arq}: `"$t`""
+    }
+  }
+  foreach ($s in $sumidos) { Note "checagem A: teste do original sumiu -- $s" }
+  if ($sumidos.Count -gt 0) {
+    $falhas += "O resultado tirou $($sumidos.Count) teste(s) do original: $(Format-Lista $sumidos 3)."
+  }
+
+  if ($mb) {
+    $doOriginal = (Get-LinhasDiff $dir $mb $base).Mais
+    $doResultado = Get-LinhasDiff $dir $base $resultado
+    $emTeste = @()
+    foreach ($arq in @($doResultado.Menos.Keys | Sort-Object)) {
+      if (-not $doOriginal.ContainsKey($arq)) { continue }
+      $acrescentadas = $doOriginal[$arq]
+      $removidas = $doResultado.Menos[$arq]
+      $readicionadas = $null
+      if ($doResultado.Mais.ContainsKey($arq)) { $readicionadas = $doResultado.Mais[$arq] }
+      $n = 0; $exemplos = @()
+      foreach ($c in @($removidas.Keys)) {
+        if (-not $acrescentadas.ContainsKey($c)) { continue }
+        # Removida aqui e acrescentada igual em outro ponto do mesmo arquivo = mudou de lugar.
+        $liquido = $removidas[$c]
+        if ($null -ne $readicionadas -and $readicionadas.ContainsKey($c)) { $liquido -= $readicionadas[$c] }
+        if ($liquido -le 0) { continue }
+        $n += [Math]::Min($liquido, $acrescentadas[$c])
+        if ($exemplos.Count -lt 2) { $exemplos += "``$($c.Substring(0, [Math]::Min(100, $c.Length)))``" }
+      }
+      if ($n -eq 0) { continue }
+      $txt = "${arq}: $n linha(s) que o original acrescentou foram removidas no resultado (ex.: $($exemplos -join ', '))"
+      Note "checagem B: $txt"
+      if ($arq -match $script:reArquivoTeste) { $emTeste += $txt } else { $avisos += $txt }
+    }
+    if ($emTeste.Count -gt 0) {
+      $falhas += "O resultado apagou linhas de teste que o original acrescentou: $(Format-Lista $emTeste 3)."
+    }
+  } else { Note 'checagem B: sem merge-base entre original e minha versao -- nao se aplica' }
+
+  $falha = $null
+  if ($falhas.Count -gt 0) { $falha = $falhas -join ' ' }
+  return [pscustomobject]@{ Falha = $falha; Avisos = $avisos }
+}
+
 # Validação feita pelo script. Devolve $null se o resultado presta, ou o motivo.
 function Test-Resultado($decisoes) {
   foreach ($n in @('rebase-merge', 'rebase-apply')) {
@@ -285,6 +468,9 @@ function Test-Resultado($decisoes) {
   if ($descartados.Count -gt 0 -and $politica -eq 'nunca-descartar') {
     return "O resultado tirou $($descartados.Count) commit(s) da minha versão e a política é nunca descartar."
   }
+  $chk = Test-TestesDoOriginal $wtPath $shaBase $shaAntes $shaDepois
+  $rel.avisos = @($chk.Avisos)
+  if ($chk.Falha) { return $chk.Falha }
   if (Test-Path -LiteralPath (Join-Path $wtPath 'package.json') -PathType Leaf) {
     if (-not (Install-Dependencias)) { return 'npm ci falhou na cópia de trabalho; não deu para conferir o typecheck.' }
     Push-Location $wtPath
@@ -303,6 +489,29 @@ Get-ChildItem -LiteralPath $logDir -Filter 'resolver-conflitos-agente-*' -ErrorA
 Note "===== inicio (RepoPath=$RepoPath BaseRef=$BaseRef BranchRef=$BranchRef NoApply=$NoApply) ====="
 
 try {
+  # ---- só as checagens A/B contra um resultado pronto (-SomenteValidar) --
+  # Não cria worktree, não chama agente, não grava o relatório nem mexe na
+  # anti-repetição: imprime o JSON e sai (0 = passou, 3 = recusado).
+  if ($SomenteValidar) {
+    $shaBase = GitValor @('-C', $RepoPath, 'rev-parse', '--verify', "$BaseRef^{commit}")
+    $shaAntes = GitValor @('-C', $RepoPath, 'rev-parse', '--verify', "$BranchRef^{commit}")
+    $shaRes = $null
+    if ($Resultado) { $shaRes = GitValor @('-C', $RepoPath, 'rev-parse', '--verify', "$Resultado^{commit}") }
+    if (-not $shaBase -or -not $shaAntes -or -not $shaRes) {
+      Note "SomenteValidar: nao encontrei '$BaseRef', '$BranchRef' ou -Resultado '$Resultado'"
+      exit 3
+    }
+    Note "SomenteValidar: base=$shaBase antes=$shaAntes resultado=$shaRes"
+    $chk = Test-TestesDoOriginal $RepoPath $shaBase $shaAntes $shaRes
+    $saida = [ordered]@{
+      resultado = $(if ($chk.Falha) { 'falhou' } else { 'aprovado' }); motivo = "$($chk.Falha)"
+      avisos = @($chk.Avisos); shaBase = $shaBase; shaAntes = $shaAntes; shaDepois = $shaRes
+    }
+    Write-Output ($saida | ConvertTo-Json -Depth 4)
+    Note "SomenteValidar: $($saida.resultado) $($saida.motivo)"
+    if ($chk.Falha) { exit 3 } else { exit 0 }
+  }
+
   # ---- 0) configuração da máquina (a tela grava; defaults se faltar) -----
   $cfg = Read-JsonTolerante $configPath
   $ativo = ("$(Prop $cfg 'ativo' $true)").ToLower() -ne 'false'
@@ -407,7 +616,10 @@ try {
     foreach ($ref in @($refBase, $refBranch)) { if ($ref) { $refsAntes[$ref] = GitValor @('-C', $RepoPath, 'rev-parse', $ref) } }
     $inicio = Get-Date
     $rel.tentativaGasta = $true
-    $exec = Invoke-Agente $exe $argsAgente $promptPath $timeoutMin
+    $countAntes = $env:GIT_CONFIG_COUNT
+    Set-BloqueioPush
+    try { $exec = Invoke-Agente $exe $argsAgente $promptPath $timeoutMin }
+    finally { Clear-BloqueioPush $countAntes }
     $rel.saidaAgente = $saidaAgentePath
     Note ("agente terminou: codigo={0} em {1:N1} min" -f $exec.Codigo, ((Get-Date) - $inicio).TotalMinutes)
 
@@ -455,12 +667,17 @@ try {
 
   # ---- 7) aplica (ou deixa no branch temporário, em -NoApply) -----------
   if ($NoApply) {
-    $script:manterBranchTemp = $true
     Remove-WorktreeResolucao
     $script:wtCriada = $false
-    [void](Invoke-Git @('-C', $RepoPath, 'branch', '-f', $branchTemp, $shaDepois))
-    $rel.branchTemporario = $branchTemp
-    Finalizar 'resolvido' "$motivo Modo de teste: nada foi aplicado; o resultado ficou no branch $branchTemp." 0
+    if ($ManterBranch) {
+      [void](Invoke-Git @('-C', $RepoPath, 'branch', '-f', $branchTemp, $shaDepois))
+      $rel.branchTemporario = $branchTemp
+      Finalizar 'resolvido' "$motivo Modo de teste: nada foi aplicado; o resultado ficou no branch $branchTemp." 0
+    }
+    # Sem -ManterBranch o branch de teste não fica acumulando no repositório;
+    # o commit continua acessível pelo sha (shaDepois) até o git limpar.
+    [void](Invoke-Git @('-C', $RepoPath, 'branch', '-D', $branchTemp) -Quieto)
+    Finalizar 'resolvido' "$motivo Modo de teste: nada foi aplicado e o branch temporário foi apagado (resultado no commit $($shaDepois.Substring(0, 9)); use -ManterBranch para guardar o branch)." 0
   }
 
   $tag = 'backup/minha-versao-' + (Get-Date -Format 'yyyyMMdd-HHmm')
