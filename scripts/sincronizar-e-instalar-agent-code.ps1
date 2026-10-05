@@ -3,7 +3,11 @@
 # "AgentCode-SincronizarEInstalar" (ver scripts/instalar-tarefas-agendadas.ps1).
 #
 # O que faz, nesta ordem, sempre parando (fail-closed) no primeiro problema:
-#   1) sincroniza o repo local (main <- origin/main; minha-versao rebaseada);
+#   1) sincroniza o repo local (main <- origin/main; minha-versao rebaseada).
+#      Se o rebase der conflito, chama scripts\resolver-conflitos-agente.ps1
+#      (renormalize e, se preciso, Claude Code headless numa worktree isolada,
+#      com validação feita pelo script); se ele não resolver, sai com 14 e o
+#      motivo fica em %LOCALAPPDATA%\AgentCodeAutoUpdate\ultima-resolucao.json;
 #   2) decide se há algo novo desde a última instalação (compara SHA);
 #   3) só então builda (typecheck obrigatório, test só informativo);
 #   4) se -InstalarApp, fecha o app respeitando o guard de ociosidade,
@@ -159,8 +163,21 @@ try {
     $codigo = Invoke-Logged 'git' 'git' @('rebase', 'main')
     if ($codigo -ne 0) {
       [void](Invoke-Logged 'git' 'git' @('rebase', '--abort'))
-      Note "ABORTADO: conflito no rebase de minha-versao sobre main. Rebase desfeito, nada foi construido/instalado."
-      exit 14
+      # Antes de desistir, tenta resolver sozinho numa worktree isolada
+      # (renormalize e, se preciso, Claude Code headless). Exit 0 = o
+      # resolvedor ja moveu minha-versao (reset --keep) para o resultado
+      # validado; qualquer outro = minha-versao intacta.
+      Set-Progresso 14 'Resolvendo conflitos com o agente'
+      $resolvedor = Join-Path $root 'scripts\resolver-conflitos-agente.ps1'
+      Note "conflito no rebase -- chamando o resolvedor de conflitos ($resolvedor)"
+      $codigoResolvedor = Invoke-Logged 'resolvedor' 'powershell' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $resolvedor, '-RepoPath', $root, '-BaseRef', 'main', '-BranchRef', 'minha-versao')
+      if ($codigoResolvedor -ne 0) {
+        Note "ABORTADO: conflito no rebase de minha-versao sobre main e o resolvedor nao resolveu (codigo $codigoResolvedor). Rebase desfeito, nada foi construido/instalado. Veja $stateDir\ultima-resolucao.json."
+        exit 14
+      }
+      # O remoto nao mudou: o push abaixo com --force-with-lease no SHA lido
+      # no passo 3 continua correto.
+      Note "conflito resolvido pelo resolvedor (detalhes em $stateDir\ultima-resolucao.json) -- seguindo o fluxo normal"
     }
 
     $shaAtual = (git rev-parse HEAD).Trim()
