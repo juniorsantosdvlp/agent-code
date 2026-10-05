@@ -50,6 +50,7 @@ import {
   Channels,
   CLAUDE_MODELS,
   DEFAULT_CONFIG,
+  DEFAULT_CONFLICT_RESOLVER_CONFIG,
   isAutoEffort,
   isAutoModel,
   OPENAI_MODELS,
@@ -72,6 +73,7 @@ import { registerAndroidToolchainIpc } from './android/androidToolchainIpc'
 import { claudeAuthProbe, isAuthenticated, logoutClaude } from './auth'
 import { claudeAuthExpiry, claudeConnectedForCard } from './authExpiry'
 import { checkUpdateStatus, lerProgressoAtualizacao, triggerForceUpdate } from './versionCheck'
+import { gravarConfigResolver, lerConfigResolver, lerUltimaResolucao } from './conflictResolverConfig'
 import { runClaudeLogin } from './login'
 import {
   claudeAccounts,
@@ -1576,6 +1578,19 @@ export function registerIpc(): void {
   ipcMain.handle(Channels.updateProgress, async () => {
     if (process.platform !== 'win32') return { estado: 'ocioso', percentual: 0, fase: '' }
     return lerProgressoAtualizacao()
+  })
+  // Resolvedor de conflitos da atualização — src/main/conflictResolverConfig.ts.
+  ipcMain.handle(Channels.updateResolverConfigGet, async () => {
+    if (process.platform !== 'win32') return { ...DEFAULT_CONFLICT_RESOLVER_CONFIG }
+    return lerConfigResolver()
+  })
+  ipcMain.handle(Channels.updateResolverConfigSet, async (_event, patch: unknown) => {
+    if (process.platform !== 'win32') throw new Error('Disponível só no Windows.')
+    return gravarConfigResolver(patch)
+  })
+  ipcMain.handle(Channels.updateResolverLast, async () => {
+    if (process.platform !== 'win32') return null
+    return lerUltimaResolucao()
   })
   // App configuration (Settings screen).
   ipcMain.handle(Channels.configGet, async () => {
