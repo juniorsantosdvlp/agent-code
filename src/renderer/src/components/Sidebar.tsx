@@ -9,6 +9,10 @@ import { CentralRowDot, CentralSidebarItem, type CentralSidebarItemProps } from 
 import type { TarefaResumoConversa } from '@shared/tarefas'
 import { TarefaSelo } from './tarefas/TarefaSelo'
 import { useResumosDeTarefas } from './tarefas/useTarefas'
+import { loadFlag, saveFlag } from '../localPrefs'
+
+/** Seção "Chats" recolhida, lembrada entre sessões (localPrefs). Padrão: aberta. */
+const CHATS_COLLAPSED_KEY = 'agentcode.sidebar.chatsCollapsed'
 
 export interface SidebarProject {
   path: string
@@ -275,6 +279,13 @@ export function Sidebar(props: Props): JSX.Element {
   const tarefas = useResumosDeTarefas()
   // Project paths the user has manually collapsed (default: everything expanded).
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set())
+  // A lista "Chats" recolhida: lida uma vez do localStorage, gravada a cada clique.
+  const [chatsCollapsed, setChatsCollapsed] = useState(() => loadFlag(CHATS_COLLAPSED_KEY))
+  const toggleChats = (): void => {
+    const next = !chatsCollapsed
+    setChatsCollapsed(next)
+    saveFlag(CHATS_COLLAPSED_KEY, next)
+  }
   // Edit identity is per RENDERED ROW (`editing.key`), not per conversation id —
   // the same conversation is shown twice (under its project and under "Chats"),
   // so keying by id would mount two <input autoFocus> and the focus-steal would
@@ -417,6 +428,7 @@ export function Sidebar(props: Props): JSX.Element {
         .map((c) => ({ c, m: matchPrompt(c, '', q, fq) }))
         .filter((x): x is FilteredConv => x.m != null)
     : recents.map((c) => ({ c, m: null }))
+  const chatsOpen = q ? true : !chatsCollapsed
 
   const isOpen = (p: SidebarProject): boolean => (p.sandbox ? sandboxOpen : !collapsedProjects.has(p.path))
   const allCollapsed = projects.length > 0 && projects.every((p) => !isOpen(p))
@@ -571,13 +583,29 @@ export function Sidebar(props: Props): JSX.Element {
 
         <section className="side-section">
           <div className="side-section-head">
-            <span className="side-section-title">Chats</span>
+            {/* Como nos projetos: com busca ativa a lista aparece mesmo recolhida. */}
+            <button
+              type="button"
+              className="side-section-toggle"
+              aria-expanded={chatsOpen}
+              title={chatsOpen ? 'Recolher chats' : 'Expandir chats'}
+              onClick={toggleChats}
+            >
+              <IconChevron open={chatsOpen} />
+              <span className="side-section-title">Chats</span>
+              {!chatsOpen && (
+                <span className="side-section-count" title="Total de chats">
+                  {recents.length}
+                </span>
+              )}
+            </button>
           </div>
-          {visibleRecents.length === 0 ? (
-            <div className="side-empty">{q ? 'Nenhum chat encontrado.' : 'Nenhum chat'}</div>
-          ) : (
-            <div className="conv-list">{visibleRecents.map(({ c, m }) => renderConv(c, false, 'chat', m))}</div>
-          )}
+          {chatsOpen &&
+            (visibleRecents.length === 0 ? (
+              <div className="side-empty">{q ? 'Nenhum chat encontrado.' : 'Nenhum chat'}</div>
+            ) : (
+              <div className="conv-list">{visibleRecents.map(({ c, m }) => renderConv(c, false, 'chat', m))}</div>
+            ))}
         </section>
       </div>
     </aside>
