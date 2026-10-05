@@ -19,6 +19,8 @@ import { v } from './agenteSecreto/util'
 // até a bicicleta, que ficou fora da tela; volta pelo canto direito pedalando.
 // Cena procedural (sem assets, em ./agenteSecreto). Fora o próprio boneco, não captura cliques.
 
+// Os mesmos de --agente-secreto-largura/altura (styles.css), que também dão o
+// espaço que a barra lateral deixa livre embaixo para o desenho: mude os dois juntos.
 const LARGURA = 230
 const ALTURA = 205
 
