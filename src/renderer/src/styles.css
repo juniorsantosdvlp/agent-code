@@ -201,16 +201,23 @@ body {
 }
 .rail-projects {
   margin-top: 6px;
+  /* Acaba acima da bicicleta do agente secreto, como a lista da barra aberta. */
+  margin-bottom: var(--agente-secreto-reserva);
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   overflow-y: auto;
 }
 
+/* A rolagem termina um pouco acima do desenho do agente secreto (fixo no canto
+   inferior esquerdo): nenhum item fica por trás dele. */
 .sidebar-scroll {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 4px 8px 16px;
+  margin-bottom: var(--agente-secreto-reserva);
 }
 .side-section {
   margin-top: 8px;
@@ -262,6 +269,36 @@ body {
   letter-spacing: 0.06em;
   color: var(--muted);
   font-weight: 600;
+}
+/* Cabeçalho "Chats" clicável: recolhe/expande a lista (contagem quando recolhida). */
+.side-section-toggle {
+  margin-right: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.side-section-toggle .side-section-title {
+  margin-right: 0;
+}
+.side-section-toggle .caret {
+  color: var(--muted);
+  transition: transform 0.12s ease;
+}
+.side-section-toggle .caret.open {
+  transform: rotate(90deg);
+}
+.side-section-toggle:hover .side-section-title,
+.side-section-toggle:hover .caret {
+  color: var(--text);
+}
+.side-section-count {
+  font-size: 11px;
+  color: var(--muted);
 }
 .side-add {
   background: transparent;
@@ -8005,12 +8042,21 @@ html.agente-agarrando * {
   cursor: grabbing !important;
   user-select: none !important;
 }
+/* Tamanho e recuo do desenho (o mesmo LARGURA/ALTURA de AgenteSecreto.tsx).
+   A reserva é o quanto a barra lateral deixa livre embaixo para ele: altura,
+   recuo e uma folga, para a lista terminar visivelmente acima do desenho. */
+:root {
+  --agente-secreto-largura: 230px;
+  --agente-secreto-altura: 205px;
+  --agente-secreto-margem: 8px;
+  --agente-secreto-reserva: calc(var(--agente-secreto-altura) + var(--agente-secreto-margem) + 12px);
+}
 .agente-secreto {
   position: fixed;
-  left: 8px;
-  bottom: 8px;
-  width: 230px;
-  height: 205px;
+  left: var(--agente-secreto-margem);
+  bottom: var(--agente-secreto-margem);
+  width: var(--agente-secreto-largura);
+  height: var(--agente-secreto-altura);
   pointer-events: none;
   z-index: 2;
 }
