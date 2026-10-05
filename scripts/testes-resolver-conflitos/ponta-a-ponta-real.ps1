@@ -1,4 +1,4 @@
-# Ponta a ponta REAL (chama o Claude Code de verdade, gasta a conta da máquina)
+﻿# Ponta a ponta REAL (chama o Claude Code de verdade, gasta a conta da máquina)
 # em modo dry-run: resolve o par <BaseRef> x <BranchRef> numa worktree isolada,
 # com -StateDir numa pasta temporária, e não move branch nem cria tag.
 #
@@ -13,7 +13,10 @@ param(
   [string]$Politica = 'descartar-e-avisar',
   [string]$Modelo = '',
   [int]$TimeoutMinutos = 40,
-  [string]$StateDir = (Join-Path $env:TEMP 'e2e-resolver-conflitos')
+  [string]$StateDir = (Join-Path $env:TEMP 'e2e-resolver-conflitos'),
+  # Guarda o resultado no branch auto-resolucao/<data> (sem isso o branch é
+  # apagado no fim e só o sha fica no relatório).
+  [switch]$ManterBranch
 )
 $ErrorActionPreference = 'Stop'
 New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
@@ -23,7 +26,9 @@ $cfg = [ordered]@{ ativo = $true; politicaCommitSuperado = $Politica; modelo = $
 [IO.File]::WriteAllText((Join-Path $StateDir 'resolver-conflitos.json'), ($cfg | ConvertTo-Json), (New-Object System.Text.UTF8Encoding $false))
 
 $resolvedor = Join-Path (Split-Path -Parent $PSScriptRoot) 'resolver-conflitos-agente.ps1'
-& powershell -NoProfile -ExecutionPolicy Bypass -File $resolvedor -RepoPath $RepoPath -BaseRef $BaseRef -BranchRef $BranchRef -NoApply -StateDir $StateDir
+$extra = @()
+if ($ManterBranch) { $extra += '-ManterBranch' }
+& powershell -NoProfile -ExecutionPolicy Bypass -File $resolvedor -RepoPath $RepoPath -BaseRef $BaseRef -BranchRef $BranchRef -NoApply -StateDir $StateDir @extra
 $codigo = $LASTEXITCODE
 Write-Host "resolvedor saiu com $codigo; relatorio: $(Join-Path $StateDir 'ultima-resolucao.json')"
 exit $codigo
