@@ -1,4 +1,4 @@
-# Testes rápidos do scripts\resolver-conflitos-agente.ps1, sem chamar o Claude
+﻿# Testes rápidos do scripts\resolver-conflitos-agente.ps1, sem chamar o Claude
 # Code (o agente é o agente-falso.ps1). Cada cenário monta um repositório git
 # descartável em %TEMP% e usa um -StateDir próprio, então não toca no estado
 # real do auto-update.
@@ -188,6 +188,97 @@ $t0 = Get-Date
 $r = Roda $dir $state 'dorme' @('-NoApply')
 Confere ($r.Codigo -eq 3 -and $r.Rel.motivo -match 'limite') 'exit 3 por tempo'
 Confere (((Get-Date) - $t0).TotalSeconds -lt 90) 'nao esperou o agente terminar sozinho (120 s)'
+
+# ---------------------------------------------------------------------------
+# Checagens A/B: testes do original intactos. O agente falso 'theirs' fica com o
+# lado da minha versão em todo conflito (o erro do caso real).
+$testeBase = @("import { expect, it } from 'vitest'", "it('teste antigo', () => {", '  expect(1 + 1).toBe(2)', '})')
+
+Write-Host '(g) checagem A: agente apaga um teste do original -> recusa (-ManterBranch guarda o resultado)'
+$dir = Novo-Repo 'g'
+$state = Join-Path $raiz 'g\state'
+Commita $dir 'main' 'x.test.ts' $testeBase 'original: teste'
+[void](GitT $dir branch -f minha-versao main)
+$l = $dezLinhas.Clone(); $l[4] = 'linha 5 da minha versao'; Commita $dir 'minha-versao' 'a.ts' $l 'minha versao: linha 5'
+$l = $dezLinhas.Clone(); $l[4] = 'linha 5 do original'; Commita $dir 'main' 'a.ts' $l 'original: linha 5'
+$antes = GitT $dir rev-parse minha-versao
+$env:AGENTE_FALSO_APAGAR = 'x.test.ts|teste antigo'
+try { $r = Roda $dir $state 'theirs' @('-NoApply', '-ManterBranch') } finally { Remove-Item env:AGENTE_FALSO_APAGAR }
+Confere ($r.Codigo -eq 3 -and $r.Rel.resultado -eq 'falhou') 'exit 3, resultado=falhou'
+Confere ($r.Rel.motivo -match 'tirou 1 teste' -and $r.Rel.motivo -match 'x\.test\.ts: "teste antigo"') 'motivo cita arquivo e titulo do teste sumido'
+Confere ($r.Rel.motivo -notmatch 'apagou linhas') 'B nao acusa (linha ja existia antes da minha versao sair do original)'
+Confere ($r.Rel.tentativaGasta -eq $true) 'tentativaGasta=true (conta para a anti-repeticao)'
+Confere ((GitT $dir rev-parse minha-versao) -eq $antes) 'minha-versao intacta'
+$bt = "$($r.Rel.branchTemporario)"
+Confere ($bt -like 'auto-resolucao/*' -and (GitT $dir rev-parse $bt) -eq $r.Rel.shaDepois) 'com -ManterBranch o branch temporario fica com o resultado'
+$prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+try {
+  $sv = (& powershell -NoProfile -ExecutionPolicy Bypass -File $resolvedor -RepoPath $dir -StateDir $state -SomenteValidar -Resultado $bt 2>&1 | ForEach-Object { "$_" }) -join "`n"
+  $svCodigo = $LASTEXITCODE
+} finally { $ErrorActionPreference = $prev }
+Confere ($svCodigo -eq 3 -and $sv -match '"resultado":\s*"falhou"' -and $sv -match 'teste antigo') '-SomenteValidar no mesmo resultado: exit 3 e JSON com resultado=falhou'
+$relDepois = Get-Content -LiteralPath (Join-Path $state 'ultima-resolucao.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+Confere ($relDepois.em -eq $r.Rel.em) '-SomenteValidar nao reescreve o relatorio'
+[void](GitT $dir branch -D $bt)
+
+Write-Host '(h) checagem B em teste: agente tira linha que o original acrescentou num teste -> recusa'
+$dir = Novo-Repo 'h'
+$state = Join-Path $raiz 'h\state'
+Commita $dir 'main' 'x.test.ts' $testeBase 'original: teste'
+[void](GitT $dir branch -f minha-versao main)
+$t = $testeBase.Clone(); $t[2] = '  expect(1 + 1).toEqual(2)'; Commita $dir 'minha-versao' 'x.test.ts' $t 'minha versao: toEqual'
+$t = @($testeBase[0..2]) + @('  expect(2 + 2).toBe(4)') + @($testeBase[3]); Commita $dir 'main' 'x.test.ts' $t 'original: mais uma assercao'
+$r = Roda $dir $state 'theirs' @('-NoApply')
+Confere ($r.Codigo -eq 3 -and $r.Rel.resultado -eq 'falhou') 'exit 3, resultado=falhou'
+Confere ($r.Rel.motivo -match 'apagou linhas de teste' -and $r.Rel.motivo -match 'x\.test\.ts: 1 linha' -and $r.Rel.motivo -match 'expect\(2 \+ 2\)') 'motivo cita arquivo, quantidade e a linha removida'
+Confere ($r.Rel.motivo -notmatch 'tirou \d+ teste') 'A nao acusa (nenhum titulo sumiu)'
+Confere ((GitT $dir branch --list 'auto-resolucao/*') -eq '') 'branch temporario removido'
+
+Write-Host '(i) checagem B em producao -> so aviso; teste que a propria minha versao tirou nao conta; -NoApply apaga o branch'
+$dir = Novo-Repo 'i'
+$state = Join-Path $raiz 'i\state'
+Commita $dir 'main' 'y.test.ts' @("it('fica', () => {})", "it('teste que o usuario tirou', () => {})") 'original: testes y'
+[void](GitT $dir branch -f minha-versao main)
+Commita $dir 'minha-versao' 'y.test.ts' @("it('fica', () => {})") 'minha versao: tira um teste do original'
+$l = $dezLinhas.Clone(); $l[4] = 'linha 5 da minha versao'; Commita $dir 'minha-versao' 'a.ts' $l 'minha versao: linha 5'
+$l = @($dezLinhas[0..4]) + @('linha nova do original') + @($dezLinhas[5..9]); Commita $dir 'main' 'a.ts' $l 'original: linha nova'
+$antes = GitT $dir rev-parse minha-versao
+$r = Roda $dir $state 'theirs' @('-NoApply')
+Confere ($r.Codigo -eq 0 -and $r.Rel.resultado -eq 'resolvido') 'exit 0, resultado=resolvido'
+$av = @($r.Rel.avisos)
+Confere ($av.Count -eq 1 -and $av[0] -match '^a\.ts: 1 linha' -and $av[0] -match 'linha nova do original') 'aviso no relatorio para a linha de producao removida'
+Confere ((GitT $dir rev-parse minha-versao) -eq $antes) 'minha-versao intacta (dry-run)'
+Confere ($null -eq $r.Rel.branchTemporario -and (GitT $dir branch --list 'auto-resolucao/*') -eq '') '-NoApply sem -ManterBranch: branch temporario apagado'
+Confere ((GitT $dir cat-file -t $r.Rel.shaDepois) -eq 'commit' -and $r.Rel.motivo -match $r.Rel.shaDepois.Substring(0, 9)) 'resultado continua acessivel pelo sha citado no motivo'
+$r = Roda $dir $state 'theirs' @('-NoApply', '-ManterBranch')
+$bt = "$($r.Rel.branchTemporario)"
+Confere ($r.Codigo -eq 0 -and $bt -like 'auto-resolucao/*' -and (GitT $dir rev-parse $bt) -eq $r.Rel.shaDepois) 'com -ManterBranch o branch fica e o relatorio aponta para ele'
+[void](GitT $dir branch -D $bt)
+
+# ---------------------------------------------------------------------------
+Write-Host '(k) push bloqueado no processo do agente (pushurl/pushInsteadOf via GIT_CONFIG_*), config do repo intacta'
+$dir = Novo-Repo 'k'
+$state = Join-Path $raiz 'k\state'
+$bareOrigin = Join-Path $raiz 'k\origin.git'; $bareUp = Join-Path $raiz 'k\upstream.git'
+[void](GitT $dir clone --bare -q $dir $bareOrigin); [void](GitT $dir clone --bare -q $dir $bareUp)
+[void](GitT $dir remote add origin $bareOrigin); [void](GitT $dir remote add upstream $bareUp)
+$l = $dezLinhas.Clone(); $l[4] = 'p'; Commita $dir 'minha-versao' 'a.ts' $l 'minha versao: p'
+$l = $dezLinhas.Clone(); $l[4] = 'q'; Commita $dir 'main' 'a.ts' $l 'original: q'
+[void](GitT $dir push -q origin 'main:refs/heads/controle')
+Confere ((GitT $bareOrigin rev-parse --verify -q refs/heads/controle) -ne '') 'controle: fora do agente o push para origin funciona'
+$env:GIT_CONFIG_COUNT = '1'; $env:GIT_CONFIG_KEY_0 = 'teste.herdada'; $env:GIT_CONFIG_VALUE_0 = 'sim'
+try { $r = Roda $dir $state 'push' @('-NoApply') }
+finally { Remove-Item env:GIT_CONFIG_COUNT, env:GIT_CONFIG_KEY_0, env:GIT_CONFIG_VALUE_0 }
+$pushLog = @(Get-Content -LiteralPath (Join-Path $state 'resolucao-agente\decisoes-agente.json.push') -Encoding UTF8)
+Write-Host ('   push do agente: ' + ($pushLog -join ' || '))
+foreach ($nome in 'origin', 'upstream', 'url') {
+  $linha = @($pushLog | Where-Object { $_ -like "$nome=*" })
+  Confere ($linha.Count -eq 1 -and $linha[0] -notmatch "^$nome=0\|" -and $linha[0] -match 'no-push') "git push ($nome) falhou dentro do agente, por causa do no-push://"
+}
+Confere ((GitT $bareOrigin rev-parse --verify -q refs/heads/vazou) -eq '' -and (GitT $bareUp rev-parse --verify -q refs/heads/vazou) -eq '') 'nada chegou nos remotes'
+Confere (@($pushLog) -contains 'herdada=sim') 'GIT_CONFIG_COUNT pre-existente preservado (entrada herdada continua valendo)'
+Confere ((GitT $dir config --get remote.origin.pushurl) -eq '' -and (GitT $dir config --get remote.upstream.pushurl) -eq '') 'config do repositorio sem pushurl (nada gravado)'
+Confere ($r.Codigo -eq 3 -and $r.Rel.resultado -eq 'falhou') 'resultado=falhou (agente nao resolveu)'
 
 # ---------------------------------------------------------------------------
 Write-Host ''

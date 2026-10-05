@@ -66,6 +66,27 @@ commits seguintes que só corrigem ou ajustam esse commit superado):
 
 {{REGRA_DESCARTE}}
 
+## O que o script confere depois (e recusa)
+
+Além de marcadores de conflito, rebase concluído e typecheck, o script compara o
+seu resultado com o original ({{BASE_REF}}) e RECUSA o resultado inteiro se:
+
+- **(A)** algum título de `it(`, `test(` ou `describe(` que existe num arquivo
+  `*.test.*` / `*.spec.*` do original não existir mais no resultado (teste do
+  original apagado ou renomeado);
+- **(B)** alguma linha de arquivo de teste que o original acrescentou (desde o ponto
+  em que a versão do usuário saiu dele) tiver sido removida no resultado. Em código
+  de produção a mesma situação não recusa, mas vira aviso para o usuário conferir.
+
+Ou seja: "ficar com o arquivo de teste da versão do usuário" no lugar do do original
+NÃO passa. Junte os testes dos dois lados. Se a única forma de concluir for apagar ou
+alterar testes do original, o commit da versão do usuário está superado: aplique a
+regra acima (pular e registrar, se a política permitir; senão `git rebase --abort`
+e explicar no resumo).
+
+O `git push` também não funciona nesta sessão (o destino de push está bloqueado
+pela configuração do processo); não tente contornar.
+
 ## Registro das decisões (obrigatório)
 
 Ao terminar (com sucesso ou não), grave este JSON em `{{ARQUIVO_DECISOES}}`:
