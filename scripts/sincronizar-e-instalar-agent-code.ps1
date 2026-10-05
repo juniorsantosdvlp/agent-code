@@ -213,6 +213,34 @@ try {
 
     if ($precisaBuildar) {
       Note "build necessario: $shaAtual"
+
+      # Quando o app dispara este script (botao em Configuracoes) ele nao herda
+      # PLAYWRIGHT_BROWSERS_PATH; sem isso o stage-chromium procura no caminho
+      # padrao, onde falta a versao atual do Chromium, e o empacotamento falha.
+      # Definido antes do npm ci porque o postinstall tambem instala o Chromium.
+      if (-not $env:PLAYWRIGHT_BROWSERS_PATH) {
+        $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $env:LOCALAPPDATA 'ms-playwright'
+      }
+
+      # ---- 6a) dependencias: o original acrescenta pacotes (ex.: voz local em
+      # out/2026) e o node_modules do clone ficava velho -- o typecheck quebrava
+      # com "Cannot find module". npm ci so quando o package-lock.json mudou
+      # desde a ultima instalacao (marca gravada dentro do proprio node_modules).
+      $hashLock = (Get-FileHash -LiteralPath (Join-Path $root 'package-lock.json') -Algorithm SHA256).Hash
+      $marcaDeps = Join-Path $root 'node_modules\.agentcode-lock-hash'
+      $hashDeps = if (Test-Path -LiteralPath $marcaDeps -PathType Leaf) { (Get-Content -LiteralPath $marcaDeps -Raw).Trim() } else { '' }
+      if ($hashLock -ne $hashDeps) {
+        Set-Progresso 15 'Instalando dependencias'
+        Note "package-lock.json mudou desde a ultima instalacao de dependencias -- rodando npm ci"
+        $codigo = Invoke-Logged 'npm ci' 'npm' @('ci', '--no-audit', '--no-fund')
+        if ($codigo -ne 0) {
+          Note "ABORTADO: npm ci falhou. Nao builda, nao instala."
+          exit 18
+        }
+        Set-Content -LiteralPath $marcaDeps -Value $hashLock -Encoding ascii
+        Note "dependencias atualizadas"
+      }
+
       Set-Progresso 20 'Conferindo os tipos'
       $codigo = Invoke-Logged 'typecheck' 'npm' @('run', 'typecheck')
       if ($codigo -ne 0) {
@@ -227,13 +255,7 @@ try {
         Note "npm test ok"
       }
 
-      # Quando o app dispara este script (botao em Configuracoes) ele nao herda
-      # PLAYWRIGHT_BROWSERS_PATH; sem isso o stage-chromium procura no caminho
-      # padrao, onde falta a versao atual do Chromium, e o empacotamento falha.
       # `playwright install` e no-op se o Chromium ja estiver la.
-      if (-not $env:PLAYWRIGHT_BROWSERS_PATH) {
-        $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $env:LOCALAPPDATA 'ms-playwright'
-      }
       Set-Progresso 55 'Preparando o navegador embutido'
       [void](Invoke-Logged 'playwright' 'npx' @('playwright', 'install', 'chromium'))
 
