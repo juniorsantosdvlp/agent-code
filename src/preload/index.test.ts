@@ -53,6 +53,21 @@ describe('preload — contexto só PC', () => {
   })
 })
 
+describe('preload — resolvedor de conflitos da atualização', () => {
+  it('encaminha leitura/gravação da config e o último relatório', async () => {
+    electronMock.invoke.mockResolvedValue(null)
+    await api.getConflictResolverConfig()
+    await api.setConflictResolverConfig({ politicaCommitSuperado: 'descartar-e-avisar' })
+    await api.getLastConflictResolution()
+
+    expect(electronMock.invoke.mock.calls).toEqual([
+      [Channels.updateResolverConfigGet],
+      [Channels.updateResolverConfigSet, { politicaCommitSuperado: 'descartar-e-avisar' }],
+      [Channels.updateResolverLast]
+    ])
+  })
+})
+
 describe('preload — contrato IPC do Codex e do agente', () => {
   it('expõe login/status Codex e inicia GPT pelo mesmo canal agent:start', async () => {
     electronMock.invoke.mockResolvedValue({ ok: true })

@@ -133,7 +133,9 @@ import type {
   PlanMediaDto,
   SuggestTitleResult,
   UpdateProgress,
-  UpdateStatus
+  UpdateStatus,
+  ConflictResolutionReport,
+  ConflictResolverConfig
 } from '../shared/ipc'
 
 import type { ContextTurnSummary, ContextTurnDetail, ContextExactCount, ContextTurnChanged } from '../shared/contextSnapshot'
@@ -170,6 +172,11 @@ const api: AgentCodeApi = {
   forceUpdate: (fecharAgora?: boolean): Promise<{ disparado: boolean; erro?: string }> =>
     ipcRenderer.invoke(Channels.updateForce, fecharAgora),
   getUpdateProgress: (): Promise<UpdateProgress> => ipcRenderer.invoke(Channels.updateProgress),
+  getConflictResolverConfig: (): Promise<ConflictResolverConfig> => ipcRenderer.invoke(Channels.updateResolverConfigGet),
+  setConflictResolverConfig: (patch: Partial<ConflictResolverConfig>): Promise<ConflictResolverConfig> =>
+    ipcRenderer.invoke(Channels.updateResolverConfigSet, patch),
+  getLastConflictResolution: (): Promise<ConflictResolutionReport | null> =>
+    ipcRenderer.invoke(Channels.updateResolverLast),
   // app config (Settings screen)
   getConfig: (): Promise<AppConfig> => ipcRenderer.invoke(Channels.configGet),
   setConfig: (patch: Partial<AppConfig>): Promise<void> => ipcRenderer.invoke(Channels.configSet, patch),

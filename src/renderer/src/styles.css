@@ -5925,6 +5925,41 @@ img.inline-att[data-caret] {
 .settings-actions-note strong {
   color: var(--text);
 }
+/* Configurações › Atualização: "Última resolução" do resolvedor de conflitos. */
+.settings-resolver-report {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.settings-resolver-report strong {
+  font-size: 13px;
+}
+.settings-resolver-report code {
+  word-break: break-all;
+}
+/* Commit descartado é perda de trabalho do usuário (recuperável pela tag): em destaque. */
+.settings-resolver-descartados {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--warn, #e0a341) 55%, var(--line));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warn, #e0a341) 8%, transparent);
+  font-size: 12px;
+}
+.settings-resolver-descartados ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.settings-resolver-log {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
 @media (max-width: 720px) {
   .settings-nav {
     flex-basis: 56px;

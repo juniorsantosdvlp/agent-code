@@ -2100,6 +2100,56 @@ export interface UpdateStatus {
   }
 }
 
+/** O que fazer quando um commit da minha-versao já foi refeito pelo original. */
+export type ConflictResolverPolicy = 'nunca-descartar' | 'descartar-e-avisar'
+
+export const CONFLICT_RESOLVER_POLICIES: readonly ConflictResolverPolicy[] = ['nunca-descartar', 'descartar-e-avisar']
+
+/**
+ * %LOCALAPPDATA%\AgentCodeAutoUpdate\resolver-conflitos.json — lido também por
+ * scripts/sincronizar-e-instalar-agent-code.ps1; os nomes dos campos são contrato
+ * com o script, não renomear.
+ */
+export interface ConflictResolverConfig {
+  /** Chamar um agente do Claude quando o rebase sobre o original der conflito. */
+  ativo: boolean
+  politicaCommitSuperado: ConflictResolverPolicy
+  /** Modelo do agente; vazio = o padrão do Claude Code. */
+  modelo: string
+  timeoutMinutos: number
+}
+
+/** Valem quando o arquivo ou o campo não existe — os mesmos do script. */
+export const DEFAULT_CONFLICT_RESOLVER_CONFIG: ConflictResolverConfig = {
+  ativo: true,
+  politicaCommitSuperado: 'nunca-descartar',
+  modelo: '',
+  timeoutMinutos: 40
+}
+
+/**
+ * %LOCALAPPDATA%\AgentCodeAutoUpdate\ultima-resolucao.json, escrito pelo script
+ * a cada conflito. Normalizado no main: campo ausente ou de tipo errado vira
+ * null/vazio, para a tela nunca quebrar por causa de um relatório incompleto.
+ */
+export interface ConflictResolutionReport {
+  em: string | null
+  resultado: 'resolvido' | 'falhou' | 'desligado' | 'pulado' | null
+  metodo: 'renormalize' | 'agente' | null
+  politica: ConflictResolverPolicy | null
+  motivo: string
+  shaBase: string | null
+  shaAntes: string | null
+  shaDepois: string | null
+  tagBackup: string | null
+  dryRun: boolean
+  commitsDescartados: { sha: string; titulo: string; motivo: string }[]
+  arquivosResolvidos: string[]
+  resumo: string
+  /** Caminho do log da resolução. */
+  log: string | null
+}
+
 // Channel name constants — single source of truth.
 export const Channels = {
   /** Lote do detector de travadas (invoke sem resposta útil) → <userData>/logs/travadas.log. */
@@ -2113,6 +2163,12 @@ export const Channels = {
   updateForce: 'update:force',
   /** Read the progress of the running update script (corner indicator). */
   updateProgress: 'update:progress',
+  /** Lê resolver-conflitos.json (defaults quando ausente). */
+  updateResolverConfigGet: 'update:resolver-config-get',
+  /** Grava um patch em resolver-conflitos.json, preservando campos desconhecidos. */
+  updateResolverConfigSet: 'update:resolver-config-set',
+  /** Lê ultima-resolucao.json; null quando nenhum conflito precisou de agente. */
+  updateResolverLast: 'update:resolver-last',
   /** Read the persisted app configuration (Settings screen). */
   configGet: 'config:get',
   /** Persist the app configuration (Settings screen). */

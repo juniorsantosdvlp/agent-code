@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { DEFAULT_CONFIG, type AppConfig } from '@shared/ipc'
+import {
+  DEFAULT_CONFIG,
+  DEFAULT_CONFLICT_RESOLVER_CONFIG,
+  type AppConfig,
+  type ConflictResolutionReport,
+  type ConflictResolverConfig
+} from '@shared/ipc'
 import { usePlanningModel } from '../planning/usePlanningModel'
 import { SettingsModal } from './SettingsModal'
 import { UiProvider } from './UiProvider'
@@ -29,6 +35,15 @@ function stubApi(config: AppConfig): Record<string, ReturnType<typeof vi.fn>> {
     })),
     forceUpdate: vi.fn(async () => ({ disparado: true })),
     getUpdateProgress: vi.fn(async () => ({ estado: 'ocioso', percentual: 0, fase: '' })),
+    getConflictResolverConfig: vi.fn(async (): Promise<ConflictResolverConfig> => ({ ...DEFAULT_CONFLICT_RESOLVER_CONFIG })),
+    setConflictResolverConfig: vi.fn(
+      async (patch: Partial<ConflictResolverConfig>): Promise<ConflictResolverConfig> => ({
+        ...DEFAULT_CONFLICT_RESOLVER_CONFIG,
+        ...patch
+      })
+    ),
+    getLastConflictResolution: vi.fn(async (): Promise<ConflictResolutionReport | null> => null),
+    openInFolder: vi.fn(async () => ({ ok: true, message: '' })),
     codexStatus: vi.fn(async () => ({ connected: false }))
   }
   ;(window as unknown as { api: unknown }).api = api
@@ -113,6 +128,126 @@ describe('Configurações: leitura que falha e gravação só do campo alterado'
     fireEvent.change(input, { target: { value: ' ts-nova ' } })
     fireEvent.blur(input)
     expect(api.setConfig).toHaveBeenLastCalledWith({ typesafe: { apiKey: 'ts-nova' } })
+  })
+})
+
+describe('Configurações → Atualização: resolvedor de conflitos', () => {
+  const resolverToggle = (): HTMLInputElement =>
+    screen.getByText('Resolver conflitos da atualização com um agente').closest('label')!.querySelector('input')!
+
+  const relatorio = (extra: Partial<ConflictResolutionReport> = {}): ConflictResolutionReport => ({
+    em: '2026-10-05T12:00:00Z',
+    resultado: 'resolvido',
+    metodo: 'agente',
+    politica: 'descartar-e-avisar',
+    motivo: 'Conflito em SettingsModal.tsx juntado pelo agente.',
+    shaBase: 'aaa',
+    shaAntes: 'bbb',
+    shaDepois: 'ccc',
+    tagBackup: null,
+    dryRun: false,
+    commitsDescartados: [],
+    arquivosResolvidos: [],
+    resumo: '',
+    log: null,
+    ...extra
+  })
+
+  it('o switch grava só {ativo} e esconde o seletor de política ao desligar', async () => {
+    const api = stubApi({ ...DEFAULT_CONFIG })
+    await view()
+    await waitFor(() => expect(resolverToggle().matches(':disabled')).toBe(false))
+    expect(resolverToggle().checked).toBe(true)
+    expect(screen.getByLabelText('Quando um commit seu foi refeito pelo original')).toBeTruthy()
+
+    await act(async () => {
+      fireEvent.click(resolverToggle())
+    })
+    expect(api.setConflictResolverConfig).toHaveBeenLastCalledWith({ ativo: false })
+    expect(resolverToggle().checked).toBe(false)
+    expect(screen.queryByLabelText('Quando um commit seu foi refeito pelo original')).toBeNull()
+  })
+
+  it('o seletor grava a política escolhida', async () => {
+    const api = stubApi({ ...DEFAULT_CONFIG })
+    await view()
+    const select = (await screen.findByLabelText('Quando um commit seu foi refeito pelo original')) as HTMLSelectElement
+    await waitFor(() => expect(select.matches(':disabled')).toBe(false))
+    expect(select.value).toBe('nunca-descartar')
+
+    await act(async () => {
+      fireEvent.change(select, { target: { value: 'descartar-e-avisar' } })
+    })
+    expect(api.setConflictResolverConfig).toHaveBeenLastCalledWith({ politicaCommitSuperado: 'descartar-e-avisar' })
+    expect(select.value).toBe('descartar-e-avisar')
+  })
+
+  it('se o main recusar a gravação, o switch volta e aparece o erro', async () => {
+    const api = stubApi({ ...DEFAULT_CONFIG })
+    api.setConflictResolverConfig.mockRejectedValue(new Error('Disponível só no Windows.'))
+    await view()
+    await waitFor(() => expect(resolverToggle().matches(':disabled')).toBe(false))
+
+    await act(async () => {
+      fireEvent.click(resolverToggle())
+    })
+    expect(resolverToggle().checked).toBe(true)
+    expect(await screen.findByText(/Disponível só no Windows\./)).toBeTruthy()
+  })
+
+  it('config ilegível: o switch fica travado e nada é gravado', async () => {
+    const api = stubApi({ ...DEFAULT_CONFIG })
+    api.getConflictResolverConfig.mockRejectedValue(new Error('falhou'))
+    await view()
+    await waitFor(() => expect(screen.getByText('Nenhum conflito precisou de agente até agora.')).toBeTruthy())
+    expect(resolverToggle().disabled).toBe(true)
+    fireEvent.click(resolverToggle())
+    expect(api.setConflictResolverConfig).not.toHaveBeenCalled()
+  })
+
+  it('sem relatório: texto discreto', async () => {
+    stubApi({ ...DEFAULT_CONFIG })
+    await view()
+    expect(await screen.findByText('Nenhum conflito precisou de agente até agora.')).toBeTruthy()
+  })
+
+  it('relatório com commits descartados: lista em destaque com título, sha curto, motivo e a tag de backup', async () => {
+    const api = stubApi({ ...DEFAULT_CONFIG })
+    api.getLastConflictResolution.mockResolvedValue(
+      relatorio({
+        commitsDescartados: [
+          { sha: '0123456789abcdef', titulo: 'Botão de ignorar', motivo: 'O original fez a mesma coisa em abc999.' }
+        ],
+        tagBackup: 'backup/minha-versao-20261005',
+        log: 'C:\\logs\\resolucao.log'
+      })
+    )
+    await view()
+
+    const destaque = await screen.findByRole('note')
+    expect(destaque.textContent).toContain('1 commit seu foi descartado')
+    expect(destaque.textContent).toContain('Botão de ignorar')
+    expect(destaque.textContent).toContain('0123456')
+    expect(destaque.textContent).not.toContain('0123456789abcdef')
+    expect(destaque.textContent).toContain('O original fez a mesma coisa em abc999.')
+    expect(destaque.textContent).toContain('backup/minha-versao-20261005')
+    expect(screen.getByText(/Resolvido · .* · agente do Claude/)).toBeTruthy()
+    expect(screen.getByText('Conflito em SettingsModal.tsx juntado pelo agente.')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir log' }))
+    expect(api.openInFolder).toHaveBeenCalledWith('C:\\logs\\resolucao.log')
+  })
+
+  it('relatório que falhou mostra o rótulo e o motivo, sem bloco de descartados', async () => {
+    const api = stubApi({ ...DEFAULT_CONFIG })
+    api.getLastConflictResolution.mockResolvedValue(
+      relatorio({ resultado: 'falhou', metodo: null, motivo: 'O agente não terminou em 40 minutos.' })
+    )
+    await view()
+    expect(await screen.findByText(/Não resolvido — atualização parada/)).toBeTruthy()
+    expect(screen.getByText('O agente não terminou em 40 minutos.')).toBeTruthy()
+    expect(screen.queryByRole('note')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Abrir log' })).toBeNull()
   })
 })
 

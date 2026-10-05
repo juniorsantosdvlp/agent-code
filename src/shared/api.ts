@@ -85,7 +85,9 @@ import type {
   WhisperStatus,
   FreezeLogApi,
   UpdateProgress,
-  UpdateStatus
+  UpdateStatus,
+  ConflictResolutionReport,
+  ConflictResolverConfig
 } from './ipc'
 import type {
   AccountUsageResult,
@@ -232,6 +234,12 @@ export interface AgentCodeApi extends OfficeApi, FreezeLogApi {
   forceUpdate(fecharAgora?: boolean): Promise<{ disparado: boolean; erro?: string }>
   /** Progress of the update script, polled by the corner indicator. */
   getUpdateProgress(): Promise<UpdateProgress>
+  /** Resolvedor de conflitos da atualização: config da máquina (resolver-conflitos.json). */
+  getConflictResolverConfig(): Promise<ConflictResolverConfig>
+  /** Grava só os campos do patch; rejeita política ou valor inválido. Devolve a config gravada. */
+  setConflictResolverConfig(patch: Partial<ConflictResolverConfig>): Promise<ConflictResolverConfig>
+  /** Último relatório do resolvedor (ultima-resolucao.json); null se nunca houve. */
+  getLastConflictResolution(): Promise<ConflictResolutionReport | null>
   /** Read the persisted app configuration. */
   getConfig(): Promise<AppConfig>
   /** Persist a partial app configuration (merged with what's on disk). */

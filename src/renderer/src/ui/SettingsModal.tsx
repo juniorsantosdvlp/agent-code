@@ -9,6 +9,9 @@ import {
   type AppConfig,
   type CacheInfo,
   type CodexStatus,
+  type ConflictResolutionReport,
+  type ConflictResolverConfig,
+  type ConflictResolverPolicy,
   type UpdateStatus
 } from '@shared/ipc'
 import { useUI } from './UiProvider'
@@ -81,6 +84,112 @@ function RevealButton({ shown, onToggle }: { shown: boolean; onToggle: () => voi
   )
 }
 
+const POLITICAS: { id: ConflictResolverPolicy; label: string }[] = [
+  { id: 'nunca-descartar', label: 'Nunca descartar — parar e avisar' },
+  { id: 'descartar-e-avisar', label: 'Descartar e avisar — guarda backup numa tag' }
+]
+
+const RESULTADO_ROTULO: Record<NonNullable<ConflictResolutionReport['resultado']>, string> = {
+  resolvido: 'Resolvido',
+  falhou: 'Não resolvido — atualização parada',
+  desligado: 'Agente desligado — atualização parada',
+  pulado: 'Pulado'
+}
+
+const METODO_ROTULO: Record<NonNullable<ConflictResolutionReport['metodo']>, string> = {
+  renormalize: 'só fim de linha (renormalize)',
+  agente: 'agente do Claude'
+}
+
+/** Data do relatório no fuso local; texto cru se o script gravou algo que não é data. */
+function quandoLocal(iso: string | null): string {
+  if (!iso) return 'data desconhecida'
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString('pt-BR')
+}
+
+/** Bloco "Última resolução" da seção Atualização — lê ultima-resolucao.json pelo main. */
+function UltimaResolucao({
+  relatorio,
+  onAbrirLog
+}: {
+  relatorio: ConflictResolutionReport | null
+  onAbrirLog: (caminho: string) => void
+}): JSX.Element {
+  if (!relatorio) {
+    return (
+      <div className="settings-resolver-report">
+        <strong>Última resolução</strong>
+        <span className="settings-hint">Nenhum conflito precisou de agente até agora.</span>
+      </div>
+    )
+  }
+  const r = relatorio
+  const cor = r.resultado === 'resolvido' ? 'var(--ok)' : r.resultado === 'falhou' ? 'var(--err)' : 'var(--warn)'
+  return (
+    <div className="settings-resolver-report">
+      <strong>Última resolução</strong>
+      <span className="settings-hint">
+        <span className="settings-status-dot" style={{ background: cor }} aria-hidden="true" />
+        {r.resultado ? RESULTADO_ROTULO[r.resultado] : 'Resultado desconhecido'} · {quandoLocal(r.em)}
+        {r.metodo && ` · ${METODO_ROTULO[r.metodo]}`}
+        {r.dryRun && ' · simulação'}
+      </span>
+      {r.motivo && <span className="settings-desc">{r.motivo}</span>}
+      {r.commitsDescartados.length > 0 && (
+        <div className="settings-resolver-descartados" role="note">
+          <span className="settings-warn">
+            {r.commitsDescartados.length === 1
+              ? '1 commit seu foi descartado porque o original já fez o mesmo'
+              : `${r.commitsDescartados.length} commits seus foram descartados porque o original já fez o mesmo`}
+          </span>
+          <ul>
+            {r.commitsDescartados.map((c, i) => (
+              <li key={`${c.sha}-${i}`}>
+                {c.titulo || 'sem título'} {c.sha && <code>{c.sha.slice(0, 7)}</code>}
+                {c.motivo && <span className="settings-hint"> — {c.motivo}</span>}
+              </li>
+            ))}
+          </ul>
+          {r.tagBackup && (
+            <span className="settings-hint">
+              Dá para recuperar pela tag <code>{r.tagBackup}</code>.
+            </span>
+          )}
+        </div>
+      )}
+      {r.tagBackup && r.commitsDescartados.length === 0 && (
+        <span className="settings-hint">
+          Backup antes da resolução: tag <code>{r.tagBackup}</code>
+        </span>
+      )}
+      {(r.resumo || r.arquivosResolvidos.length > 0) && (
+        <details className="settings-hint">
+          <summary style={{ cursor: 'pointer' }}>O que foi feito</summary>
+          {r.resumo && <p style={{ margin: '4px 0', whiteSpace: 'pre-wrap' }}>{r.resumo}</p>}
+          {r.arquivosResolvidos.length > 0 && (
+            <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+              {r.arquivosResolvidos.map((a) => (
+                <li key={a}>
+                  <code>{a}</code>
+                </li>
+              ))}
+            </ul>
+          )}
+        </details>
+      )}
+      {r.log && (
+        <span className="settings-hint settings-resolver-log">
+          <button className="btn ghost small" type="button" onClick={() => onAbrirLog(r.log!)} title={r.log}>
+            Abrir log
+          </button>
+          <code>{r.log}</code>
+        </span>
+      )}
+    </div>
+  )
+}
+
 /**
  * App settings, organized in tabs: Geral (live permission switches), Modelos e
  * contas (Claude / ChatGPT / Ollama), Voz (local voice, speed, dictation engine) and
@@ -125,6 +234,11 @@ export function SettingsModal({
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null)
   const [updateBusy, setUpdateBusy] = useState(false)
   const [forceUpdateBusy, setForceUpdateBusy] = useState(false)
+  /** Config do resolvedor de conflitos; null enquanto não foi lida (ou falhou) —
+   *  aí o switch fica travado, para não gravar a partir dos padrões. */
+  const [resolver, setResolver] = useState<ConflictResolverConfig | null>(null)
+  /** undefined = ainda lendo; null = nenhum relatório (nunca houve conflito). */
+  const [ultimaResolucao, setUltimaResolucao] = useState<ConflictResolutionReport | null | undefined>(undefined)
   const [codex, setCodex] = useState<CodexStatus>({ connected: false })
   const [codexBusy, setCodexBusy] = useState(false)
   const [claudeBusy, setClaudeBusy] = useState(false)
@@ -153,6 +267,8 @@ export function SettingsModal({
     void window.api.getCacheInfo().then(setCache)
     void window.api.getAppVersion().then(setAppVersion)
     void window.api.checkUpdateStatus().then(setUpdateStatus)
+    void window.api.getConflictResolverConfig().then(setResolver, () => setResolver(null))
+    void window.api.getLastConflictResolution().then(setUltimaResolucao, () => setUltimaResolucao(null))
     void window.api.codexStatus().then(setCodex)
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') onClose()
@@ -274,10 +390,35 @@ export function SettingsModal({
   const verificarAtualizacao = async (): Promise<void> => {
     setUpdateBusy(true)
     try {
-      setUpdateStatus(await window.api.checkUpdateStatus())
+      const [status, relatorio] = await Promise.all([
+        window.api.checkUpdateStatus(),
+        window.api.getLastConflictResolution().catch(() => null)
+      ])
+      setUpdateStatus(status)
+      setUltimaResolucao(relatorio)
     } finally {
       setUpdateBusy(false)
     }
+  }
+
+  /** Grava só o campo alterado em resolver-conflitos.json; se o main recusar,
+   *  a tela volta ao valor anterior em vez de mostrar algo que não foi salvo. */
+  const patchResolver = async (patch: Partial<ConflictResolverConfig>): Promise<void> => {
+    if (!resolver) return
+    const anterior = resolver
+    setResolver({ ...resolver, ...patch })
+    try {
+      setResolver(await window.api.setConflictResolverConfig(patch))
+    } catch (error) {
+      setResolver(anterior)
+      notify('erro', ipcErrorMessage(error, 'Não foi possível salvar a configuração do resolvedor de conflitos.'))
+    }
+  }
+
+  // shell.openPath (canal openInFolder) abre também arquivo, no programa padrão.
+  const abrirLogResolucao = async (caminho: string): Promise<void> => {
+    const { ok, message } = await window.api.openInFolder(caminho)
+    if (!ok) notify('erro', message)
   }
 
   // Dispara o script e some — ele pode fechar o app antes desta tela ver o
@@ -796,6 +937,47 @@ export function SettingsModal({
                             : `${updateStatus.original.commitsAtras} commit(s) atrás`}
                       </span>
                     </div>
+                  )}
+                  <label className="settings-switch-row">
+                    <span className="settings-switch-text">
+                      <strong>Resolver conflitos da atualização com um agente</strong>
+                      <span className="settings-desc">
+                        Quando o original muda algo que você também mudou, um agente do Claude tenta juntar as duas
+                        versões sozinho. Se não conseguir, a atualização fica parada e o motivo aparece aqui.
+                      </span>
+                    </span>
+                    <input
+                      className="switch-input"
+                      type="checkbox"
+                      checked={resolver?.ativo ?? false}
+                      disabled={!resolver}
+                      onChange={(event) => void patchResolver({ ativo: event.target.checked })}
+                    />
+                    <span className="switch-visual" aria-hidden="true" />
+                  </label>
+                  {resolver?.ativo && (
+                    <div className="settings-row">
+                      <span>
+                        <strong>Quando um commit seu foi refeito pelo original</strong>
+                      </span>
+                      <select
+                        className="settings-input"
+                        aria-label="Quando um commit seu foi refeito pelo original"
+                        value={resolver.politicaCommitSuperado}
+                        onChange={(event) =>
+                          void patchResolver({ politicaCommitSuperado: event.target.value as ConflictResolverPolicy })
+                        }
+                      >
+                        {POLITICAS.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  {ultimaResolucao !== undefined && (
+                    <UltimaResolucao relatorio={ultimaResolucao} onAbrirLog={(c) => void abrirLogResolucao(c)} />
                   )}
                   {updateStatus?.historico &&
                     (updateStatus.historico.commits.length > 0 || updateStatus.historico.eventos.length > 0) && (
