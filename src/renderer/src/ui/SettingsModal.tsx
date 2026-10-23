@@ -262,9 +262,18 @@ export function SettingsModal({
     void fetchConfig()
     void window.api.getCacheInfo().then(setCache)
     void window.api.getAppVersion().then(setAppVersion)
-    void window.api.checkUpdateStatus().then(setUpdateStatus)
-    void window.api.getConflictResolverConfig().then(setResolver, () => setResolver(null))
-    void window.api.getLastConflictResolution().then(setUltimaResolucao, () => setUltimaResolucao(null))
+    // Canais que só existem nesta versão (seção Atualização). Os testes do
+    // original montam um window.api parcial, sem eles: a tela não pode cair
+    // no mount por causa disso -- a seção simplesmente fica sem dados.
+    if (typeof window.api.checkUpdateStatus === 'function') {
+      void window.api.checkUpdateStatus().then(setUpdateStatus, () => setUpdateStatus(null))
+    }
+    if (typeof window.api.getConflictResolverConfig === 'function') {
+      void window.api.getConflictResolverConfig().then(setResolver, () => setResolver(null))
+    }
+    if (typeof window.api.getLastConflictResolution === 'function') {
+      void window.api.getLastConflictResolution().then(setUltimaResolucao, () => setUltimaResolucao(null))
+    }
     void window.api.codexStatus().then(setCodex)
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') onClose()
