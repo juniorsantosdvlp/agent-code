@@ -80,5 +80,10 @@ switch ($env:AGENTE_FALSO_MODO) {
     exit 1
   }
   'dorme' { Start-Sleep -Seconds 120; exit 0 }
+  # Igual ao claude -p sem sessão: JSON de resultado com is_error e a frase de login.
+  'deslogado' {
+    Write-Output '{"type":"result","subtype":"success","is_error":true,"num_turns":1,"total_cost_usd":0,"result":"Not logged in · Please run /login"}'
+    exit 1
+  }
   default { exit 1 }
 }
