@@ -302,6 +302,21 @@ Confere ((Chamadas $state) -eq 1) 'agente foi chamado (a worktree nova existiu)'
 Confere ((GitT $dir worktree list --porcelain) -notmatch 'worktree-resolucao') 'registro da worktree limpo no fim'
 Confere ((GitT $dir branch --list 'auto-resolucao/*') -eq '') 'branch temporario removido'
 
+Write-Host '(n) claude sem sessao ("Not logged in") -> motivo claro e a tentativa nao e gasta'
+$dir = Novo-Repo 'n'
+$state = Join-Path $raiz 'n\state'
+$l = $dezLinhas.Clone(); $l[4] = 'n1'; Commita $dir 'minha-versao' 'a.ts' $l 'minha versao: n1'
+$l = $dezLinhas.Clone(); $l[4] = 'n2'; Commita $dir 'main' 'a.ts' $l 'original: n2'
+$contaFalsa = Join-Path $raiz 'n\conta-claude'
+New-Item -ItemType Directory -Force -Path $contaFalsa | Out-Null
+Config $state ('{ "claudeConfigDir": ' + (ConvertTo-Json $contaFalsa) + ' }')
+$r = Roda $dir $state 'deslogado' @('-NoApply')
+Confere ($r.Codigo -eq 3 -and $r.Rel.motivo -match 'não está logado' -and $r.Rel.motivo -match 'claudeConfigDir') 'exit 3 com motivo falando de login e de claudeConfigDir'
+Confere ($r.Rel.motivo -match [regex]::Escape($contaFalsa)) 'motivo cita a pasta de conta vinda da config'
+Confere ($r.Rel.tentativaGasta -eq $false) 'tentativaGasta=false (nao entra na anti-repeticao)'
+$r = Roda $dir $state 'deslogado' @('-NoApply')
+Confere ($r.Codigo -eq 3 -and $r.Rel.resultado -eq 'falhou' -and (Chamadas $state) -eq 2) 'mesmo par de novo: tenta de novo em vez de pular'
+
 Write-Host '(m) worktree add falha -> branch temporario nao fica orfao'
 $dir = Novo-Repo 'm'
 $state = Join-Path $raiz 'm\state'
