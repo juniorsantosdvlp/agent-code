@@ -132,6 +132,24 @@ function GitValor([string[]]$argumentos) {
   return $r.Saida[0].Trim()
 }
 
+function Test-WorktreeRegistrada {
+  # true se o git ainda registra $wtPath como worktree (com ou sem a pasta no disco).
+  $r = Invoke-Git @('-C', $RepoPath, 'worktree', 'list', '--porcelain') -Quieto
+  if ($r.Codigo -ne 0) { return $false }
+  $alvo = ($wtPath -replace '\\', '/').TrimEnd('/')
+  $folha = Split-Path -Leaf $alvo
+  foreach ($linha in $r.Saida) {
+    if ($linha -like 'worktree *') {
+      $p = ($linha.Substring(9) -replace '\\', '/').TrimEnd('/')
+      if ($p -ieq $alvo) { return $true }
+      # O git grava o caminho longo; quem chamou pode ter passado a forma 8.3
+      # (C:\Users\FINANC~1\...). Mesma folha + pasta inexistente = o nosso órfão.
+      if ((Split-Path -Leaf $p) -ieq $folha -and -not (Test-Path -LiteralPath $p)) { return $true }
+    }
+  }
+  return $false
+}
+
 function Remove-WorktreeResolucao {
   if (Test-Path -LiteralPath $wtPath) {
     [void](Invoke-Git @('-C', $wtPath, 'rebase', '--abort') -Quieto)
@@ -141,7 +159,18 @@ function Remove-WorktreeResolucao {
       [void](Invoke-Nativo 'rmdir' 'cmd.exe' @('/c', 'rmdir', '/s', '/q', $wtPath) -Quieto)
     }
   }
+  # Registro órfão: a pasta sumiu mas o git ainda a lista. Acontece quando o
+  # processo morre no meio do `worktree add` (fica "locked: initializing") ou
+  # quando alguém apaga a pasta à mão. `prune` ignora worktree travada e o
+  # próximo `worktree add` falha para sempre com "missing but locked" -- então
+  # destrava antes de podar e, se ainda sobrar, força a remoção do registro.
+  # (unlock é inofensivo quando não há registro ou ele não está travado.)
+  [void](Invoke-Git @('-C', $RepoPath, 'worktree', 'unlock', $wtPath) -Quieto)
   [void](Invoke-Git @('-C', $RepoPath, 'worktree', 'prune') -Quieto)
+  if (Test-WorktreeRegistrada) {
+    [void](Invoke-Git @('-C', $RepoPath, 'worktree', 'remove', '--force', '--force', $wtPath) -Quieto)
+    [void](Invoke-Git @('-C', $RepoPath, 'worktree', 'prune') -Quieto)
+  }
 }
 
 $rel = [ordered]@{
@@ -560,7 +589,11 @@ try {
   # ---- 2/3) worktree isolada + tentativa barata (renormalize) ------------
   Remove-WorktreeResolucao
   $r = Invoke-Git @('-C', $RepoPath, 'worktree', 'add', '-b', $branchTemp, $wtPath, $shaAntes)
-  if ($r.Codigo -ne 0) { Finalizar 'falhou' 'Não consegui criar a cópia isolada (worktree) para resolver.' 3 }
+  if ($r.Codigo -ne 0) {
+    # `worktree add -b` cria o branch antes de falhar: não deixar branch órfão.
+    [void](Invoke-Git @('-C', $RepoPath, 'branch', '-D', $branchTemp) -Quieto)
+    Finalizar 'falhou' 'Não consegui criar a cópia isolada (worktree) para resolver.' 3
+  }
   $script:wtCriada = $true
   $env:GIT_EDITOR = 'true'
   $env:GIT_TERMINAL_PROMPT = '0'
