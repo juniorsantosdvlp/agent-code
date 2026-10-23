@@ -226,6 +226,29 @@ function Find-Claude {
   return $null
 }
 
+# Pasta de conta do Claude Code (CLAUDE_CONFIG_DIR) que o agente headless vai
+# usar. O loop sobe pela pasta Inicializar, sem a variável, e o claude -p caía
+# em ~/.claude -- que nesta máquina é outra conta, sem sessão. Ordem:
+#   1) claudeConfigDir do resolver-conflitos.json, se a pasta existir;
+#   2) CLAUDE_CONFIG_DIR herdado, se tiver .credentials.json;
+#   3) a conta do próprio Agent Code com credencial mais recente
+#      (%APPDATA%\agent-code-desktop\agent-code-local\claude-accounts\*);
+#   4) senão deixa como está (padrão do claude: ~/.claude).
+function Resolve-ClaudeConfigDir([string]$daConfig) {
+  if ($daConfig -and (Test-Path -LiteralPath $daConfig -PathType Container)) { return @{ Dir = $daConfig; Origem = 'config' } }
+  $herdado = $env:CLAUDE_CONFIG_DIR
+  if ($herdado -and (Test-Path -LiteralPath (Join-Path $herdado '.credentials.json') -PathType Leaf)) { return @{ Dir = $herdado; Origem = 'herdado' } }
+  $contas = Join-Path $env:APPDATA 'agent-code-desktop\agent-code-local\claude-accounts'
+  if (Test-Path -LiteralPath $contas -PathType Container) {
+    $cred = @(Get-ChildItem -LiteralPath $contas -Directory -ErrorAction SilentlyContinue |
+      ForEach-Object { Get-Item -LiteralPath (Join-Path $_.FullName '.credentials.json') -ErrorAction SilentlyContinue } |
+      Sort-Object LastWriteTimeUtc -Descending)
+    if ($cred.Count -gt 0) { return @{ Dir = $cred[0].DirectoryName; Origem = 'conta do Agent Code' } }
+  }
+  if ($herdado) { return @{ Dir = $herdado; Origem = 'herdado (sem credencial)' } }
+  return @{ Dir = ''; Origem = 'padrao (~/.claude)' }
+}
+
 function Format-Arg([string]$a) {
   if ($a -eq '' -or $a -match '[\s"]') { return '"' + ($a -replace '"', '\"') + '"' }
   return $a
@@ -553,8 +576,9 @@ try {
   $timeoutMin = 40.0
   try { $timeoutMin = [double](Prop $cfg 'timeoutMinutos' 40) } catch { }
   if ($timeoutMin -le 0) { $timeoutMin = 40.0 }
+  $claudeConfigDirCfg = [string](Prop $cfg 'claudeConfigDir' '')
   $rel.politica = $politica
-  Note "config: ativo=$ativo politica=$politica modelo='$modelo' timeoutMinutos=$timeoutMin"
+  Note "config: ativo=$ativo politica=$politica modelo='$modelo' timeoutMinutos=$timeoutMin claudeConfigDir='$claudeConfigDirCfg'"
   if (-not $ativo) { Finalizar 'desligado' 'A resolução automática de conflitos está desligada nas configurações.' 1 }
 
   $shaBase = GitValor @('-C', $RepoPath, 'rev-parse', '--verify', "$BaseRef^{commit}")
@@ -644,6 +668,9 @@ try {
     # Quando o app dispara o sincronizar, herdamos variáveis da sessão dele;
     # o Claude Code filho não pode achar que roda dentro de outra sessão.
     foreach ($v in @('CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SSE_PORT')) { Remove-Item "env:$v" -ErrorAction SilentlyContinue }
+    $conta = Resolve-ClaudeConfigDir $claudeConfigDirCfg
+    if ($conta.Dir) { $env:CLAUDE_CONFIG_DIR = $conta.Dir }
+    Note "conta do Claude: $($conta.Origem) -> '$($conta.Dir)'"
 
     $refsAntes = @{}
     foreach ($ref in @($refBase, $refBranch)) { if ($ref) { $refsAntes[$ref] = GitValor @('-C', $RepoPath, 'rev-parse', $ref) } }
@@ -677,6 +704,11 @@ try {
         [void](Invoke-Git @('-C', $RepoPath, 'update-ref', $ref, $refsAntes[$ref]))
         Finalizar 'falhou' "O agente mexeu em $ref fora da cópia isolada; resultado descartado." 3
       }
+    }
+    if ($textoAgente -match 'Not logged in|Please run /login') {
+      # Falha de infraestrutura, não do resultado: não gasta a anti-repetição.
+      $rel.tentativaGasta = $false
+      Finalizar 'falhou' "O Claude Code não está logado na conta usada pelo resolvedor ($($conta.Origem): '$($conta.Dir)'). Faça login nela ou aponte outra em claudeConfigDir do resolver-conflitos.json." 3
     }
     if ($exec.Estourou) { Finalizar 'falhou' "O agente passou do limite de $timeoutMin minutos." 3 }
     if ((GitValor @('-C', $wtPath, 'rev-parse', 'HEAD')) -eq $shaAntes -and $shaAntes -ne $shaBase) {
