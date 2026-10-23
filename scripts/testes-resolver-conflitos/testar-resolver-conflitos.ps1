@@ -281,6 +281,40 @@ Confere ((GitT $dir config --get remote.origin.pushurl) -eq '' -and (GitT $dir c
 Confere ($r.Codigo -eq 3 -and $r.Rel.resultado -eq 'falhou') 'resultado=falhou (agente nao resolveu)'
 
 # ---------------------------------------------------------------------------
+Write-Host '(l) worktree anterior sumiu do disco mas ficou registrada e travada ("initializing") -> destrava e segue'
+$dir = Novo-Repo 'l'
+$state = Join-Path $raiz 'l\state'
+New-Item -ItemType Directory -Force -Path $state | Out-Null
+$l = $dezLinhas.Clone(); $l[4] = 'linha 5 da minha versao'; Commita $dir 'minha-versao' 'a.ts' $l 'minha versao: linha 5'
+$l = $dezLinhas.Clone(); $l[4] = 'linha 5 do original'; Commita $dir 'main' 'a.ts' $l 'original: linha 5'
+# Reproduz o processo morto no meio do `git worktree add`: registro em
+# .git/worktrees, pasta apagada e arquivo `locked` com o conteúdo "initializing".
+$wtOrfa = Join-Path $state 'worktree-resolucao'
+[void](GitT $dir worktree add -q -b lixo $wtOrfa main)
+Remove-Item -LiteralPath $wtOrfa -Recurse -Force
+Escreve (Join-Path $dir '.git\worktrees\worktree-resolucao\locked') @('initializing')
+$pre = GitT $dir worktree add -b lixo2 $wtOrfa main
+Confere ($pre -match 'missing but locked') 'pre-condicao: git recusa criar a worktree ("missing but locked")'
+[void](GitT $dir branch -D lixo2)
+$r = Roda $dir $state 'marcador' @('-NoApply')
+Confere ($r.Rel.motivo -notmatch 'cópia isolada') 'resolvedor nao falhou ao criar a worktree'
+Confere ((Chamadas $state) -eq 1) 'agente foi chamado (a worktree nova existiu)'
+Confere ((GitT $dir worktree list --porcelain) -notmatch 'worktree-resolucao') 'registro da worktree limpo no fim'
+Confere ((GitT $dir branch --list 'auto-resolucao/*') -eq '') 'branch temporario removido'
+
+Write-Host '(m) worktree add falha -> branch temporario nao fica orfao'
+$dir = Novo-Repo 'm'
+$state = Join-Path $raiz 'm\state'
+$l = $dezLinhas.Clone(); $l[4] = 'm1'; Commita $dir 'minha-versao' 'a.ts' $l 'minha versao: m1'
+$l = $dezLinhas.Clone(); $l[4] = 'm2'; Commita $dir 'main' 'a.ts' $l 'original: m2'
+# Um ARQUIVO no lugar da pasta da worktree faz o `worktree add` falhar.
+New-Item -ItemType Directory -Force -Path $state | Out-Null
+Escreve (Join-Path $state 'worktree-resolucao') @('nao sou pasta')
+$r = Roda $dir $state 'marcador' @('-NoApply')
+Confere ($r.Codigo -eq 3 -and $r.Rel.motivo -match 'cópia isolada') 'exit 3 por nao criar a worktree'
+Confere ((GitT $dir branch --list 'auto-resolucao/*') -eq '') 'branch temporario apagado mesmo com a falha no worktree add'
+
+# ---------------------------------------------------------------------------
 Write-Host ''
 Write-Host ("{0} verificacoes, {1} falha(s). Pasta: {2}" -f $script:total, $script:falhas, $raiz)
 if (-not $Manter -and $script:falhas -eq 0) { Remove-Item -LiteralPath $raiz -Recurse -Force -ErrorAction SilentlyContinue }
