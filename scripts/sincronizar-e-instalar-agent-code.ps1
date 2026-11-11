@@ -51,9 +51,31 @@ function Rotate-Log([string]$path, [long]$maxBytes = 2MB) {
   }
 }
 
+# Grava no log sem nunca derrubar o script. Add-Content falhava quando o app
+# (versionCheck.ts lê o log inteiro para o histórico) ou outro leitor estava
+# com o arquivo aberto no mesmo instante; com EAP=Stop isso abortava a rodada
+# no meio dos testes, sem mensagem nenhuma (11/11/2026). Aqui o arquivo abre
+# compartilhando leitura/escrita, tenta de novo algumas vezes e, se ainda
+# assim falhar, só perde aquelas linhas do log.
+function Write-LogLines([string[]]$lines) {
+  if (-not $lines -or $lines.Count -eq 0) { return }
+  $texto = ($lines -join "`r`n") + "`r`n"
+  $bytes = [System.Text.Encoding]::UTF8.GetBytes($texto)
+  for ($tentativa = 1; $tentativa -le 10; $tentativa++) {
+    try {
+      $fs = [System.IO.FileStream]::new($logPath, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write,
+        ([System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete))
+      try { $fs.Write($bytes, 0, $bytes.Length) } finally { $fs.Dispose() }
+      return
+    } catch {
+      Start-Sleep -Milliseconds (100 * $tentativa)
+    }
+  }
+}
+
 function Note([string]$message) {
   $line = "[{0}] {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $message
-  Add-Content -LiteralPath $logPath -Value $line -Encoding utf8
+  Write-LogLines @($line)
   Write-Host $line
 }
 
@@ -83,7 +105,11 @@ function Invoke-Logged([string]$prefix, [string]$exe, [string[]]$argumentos) {
   $saida = & $exe @argumentos 2>&1
   $codigo = $LASTEXITCODE
   $ErrorActionPreference = $prev
-  $saida | ForEach-Object { Note "$prefix`: $_" }
+  # Uma escrita só para a saída inteira (o npm test passa de 10 mil linhas).
+  $agora = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+  $linhas = @($saida | ForEach-Object { "[$agora] $prefix`: $_" })
+  Write-LogLines $linhas
+  $linhas | ForEach-Object { Write-Host $_ }
   return $codigo
 }
 
